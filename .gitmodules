@@ -1,0 +1,3 @@
+[submodule "ibug/face_pose_augmentation/tddfa"]
+	path = ibug/face_pose_augmentation/tddfa
+	url = https://github.com/cleardusk/3DDFA.git
