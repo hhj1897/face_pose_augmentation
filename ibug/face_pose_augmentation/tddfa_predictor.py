@@ -1,0 +1,109 @@
+import os
+import cv2
+import torch
+import numpy as np
+from types import SimpleNamespace
+from .tddfa import mobilenet_v1
+from .tddfa.utils.inference import parse_roi_box_from_landmark, crop_img, predict_68pts
+from .tddfa_utils import parse_param_pose, reconstruct_from_3dmm
+
+
+class TDDFAPredictor(object):
+    def __init__(self, device='cuda:0', model=None, config=None):
+        self.device = device
+        if model is None:
+            model = TDDFAPredictor.get_model()
+        if config is None:
+            config = TDDFAPredictor.create_config()
+        self.config = SimpleNamespace(**model.config.__dict__, **config.__dict__)
+        self.net = getattr(mobilenet_v1, self.config.arch)(num_classes=62).to(self.device)
+        pretrained_dict = torch.load(model.weights, map_location=self.device)
+        if 'state_dict' in pretrained_dict.keys():
+            pretrained_dict = {key.split('module.', 1)[-1] if key.startswith('module.') else key: value
+                               for key, value in pretrained_dict['state_dict'].items()}
+        else:
+            pretrained_dict = {key.split('module.', 1)[-1] if key.startswith('module.') else key: value
+                               for key, value in pretrained_dict.items()}
+        self.net.load_state_dict(pretrained_dict)
+        self.net.eval()
+        if self.config.use_jit:
+            self.net = torch.jit.trace(self.net, torch.rand(1, 3, self.config.input_size,
+                                                            self.config.input_size).to(self.device))
+
+    @staticmethod
+    def get_model(name='mobilenet1'):
+        name = name.lower()
+        if name == 'mobilenet1':
+            return SimpleNamespace(weights=os.path.join(os.path.dirname(mobilenet_v1.__file__),
+                                                        'models', 'phase1_wpdc_vdc.pth.tar'),
+                                   config=SimpleNamespace(arch='mobilenet_1', input_size=120))
+        else:
+            raise ValueError('name must be set to mobilenet')
+
+    @staticmethod
+    def create_config(use_jit=True):
+        return SimpleNamespace(use_jit=use_jit)
+
+    @torch.no_grad()
+    def __call__(self, image, landmarks, rgb=True, two_steps=False):
+        if landmarks.size > 0:
+            # Preparation
+            if rgb:
+                image = image[..., ::-1]
+            if landmarks.ndim == 2:
+                landmarks = landmarks[np.newaxis, ...]
+
+            # Crop the face patches
+            roi_boxes = []
+            face_patches = []
+            for lms in landmarks:
+                roi_boxes.append(parse_roi_box_from_landmark(lms.T))
+                face_patches.append(cv2.resize(crop_img(image, roi_boxes[-1]),
+                                               (self.config.input_size, self.config.input_size)))
+            face_patches = (torch.from_numpy(np.array(face_patches).transpose(
+                (0, 3, 1, 2)).astype(np.float32)).to(self.device) - 127.5) / 128.0
+
+            # Get 3DMM parameters
+            tdmm_params = self.net(face_patches).cpu().numpy()
+            if two_steps:
+                landmarks = []
+                for param, roi_box in zip(tdmm_params, roi_boxes):
+                    landmarks.append(predict_68pts(param, roi_box).T)
+                return self.__call__(image, np.array(landmarks), rgb=False, two_steps=False)
+            else:
+                return np.hstack((np.array(roi_boxes, dtype=np.float32), tdmm_params))
+        else:
+            return np.empty(shape=(0, 66), dtype=np.float32)
+
+    @staticmethod
+    def decode(tddfa_result):
+        if tddfa_result.size > 0:
+            if tddfa_result.ndim > 1:
+                return [TDDFAPredictor.decode(x) for x in tddfa_result]
+            else:
+                roi_box = tddfa_result[:4]
+                param = tddfa_result[4:]
+                vertex, pts68, fR, T = reconstruct_from_3dmm(param)
+                camera_transform = {'fR': fR, 'T': T}
+                yaw, pitch, roll, t3d, f = parse_param_pose(param)
+                face_pose = {'yaw': yaw, 'pitch': pitch, 'roll': roll, 't3d': t3d, 'f': f}
+                return {'roi_box': roi_box, 'param': param, 'vertex': vertex, 'pts68': pts68,
+                        'face_pose': face_pose, 'camera_transform': camera_transform}
+        else:
+            return []
+
+    def project_vertex(self, decoded_result, dense=True):
+        vertex = (decoded_result['camera_transform']['fR'] @
+                  (decoded_result['vertex'] if dense else decoded_result['pts68']) +
+                  decoded_result['camera_transform']['T'])
+
+        sx, sy, ex, ey = decoded_result['roi_box']
+        scale_x = (ex - sx) / self.config.input_size
+        scale_y = (ey - sy) / self.config.input_size
+        vertex[0, :] = vertex[0, :] * scale_x + sx
+        vertex[1, :] = (self.config.input_size + 1 - vertex[1, :]) * scale_y + sy
+
+        s = (scale_x + scale_y) / 2
+        vertex[2, :] *= s
+
+        return vertex.T
