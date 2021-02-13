@@ -183,8 +183,8 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         if return_corres_map:
             maps_or_images.append(corres_map)
         else:
-            profile_image = FaceFrontalizationFilling(new_img, corres_map) 
-            profile_image = (255*profile_image).astype(image.dtype)
+            profile_image = FaceFrontalizationFilling(new_img, corres_map)
+            profile_image = (255.0 * profile_image).astype(image.dtype)
             maps_or_images.append(profile_image)
 
         # get the landmarks
@@ -200,7 +200,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         else:
             warped_landmarks.append(all_vertex_ref[:, face_models['keypoints']+bg_vertex_src.shape[1]])
     
-    return maps_or_images, warped_landmarks
+    return np.array(maps_or_images, copy=False), np.array(warped_landmarks, copy=False)
 
 
 def generate_profile_face(pitch_delta, yaw_delta, roll_delta, fit_result, image, face_models,

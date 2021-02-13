@@ -161,8 +161,6 @@ def EliminateInternalTri(cont_ver, tri):
     valid_bin = np.zeros(tri.shape[1], dtype=np.bool)
 
     for i in range(cont_ver.shape[1]):
-        #     if i == 3:
-        #         aaa = 1
         # for each contour point, find its related tri
         tmp_bin = np.any(tri == i, axis=0)
         conn_tri_ind = np.where(tmp_bin == True)[0]
@@ -198,7 +196,7 @@ def EliminateInternalTri(cont_ver, tri):
 
 
 def AnchorAdjustment_Z(contour_all, contour_all_ref, adjust_bin, tri, img):
-#     height, width, nChannels = img.shape
+    # height, width, nChannels = img.shape
     adjust_ind = np.where(adjust_bin)[0]
     # Get only z coordinates 
     # We sovle the equation Y = AX
@@ -410,7 +408,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
     # The layers are set between face contour and bbox
-    height, width, _ = img.shape
+    height, width = img.shape[:2]
     layer = len(layer_width)    
     
     contlist = [[] for _ in range(layer+2)]
@@ -544,7 +542,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     contour_all = np.hstack(contlist)
 
     # Finally refine the anchor depth with real depth
-    depth_ref, tri_ind = ZBuffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2,:][np.newaxis,:], np.zeros((height, width, 1)))
+    depth_ref, tri_ind = ZBuffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2,:][np.newaxis,:],
+                                 np.zeros((height, width, 1)))
     # # test draw
     # im1 = Image.fromarray(( 255*(depth_ref-np.min(depth_ref))/(np.max(depth_ref)-np.min(depth_ref)) ).astype('uint8'))
     # im2 = Image.fromarray((255*tri_ind/np.max(tri_ind)).astype('uint8'))    
@@ -665,7 +664,6 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     return contlist_ref, t3d_ref
 
 
-
 def FaceFrontalizationMapping(mask, tri_ind, all_vertex_src, all_vertex_ref, all_tri, 
                               bg_tri_num, valid_tri_half, vertex_length, tri_length, sym_tri_list):
     height, width = mask.shape
@@ -709,11 +707,10 @@ def FaceFrontalizationMapping(mask, tri_ind, all_vertex_src, all_vertex_ref, all
     if sym_tri_list.dtype != np.float64:
         sym_tri_list = sym_tri_list.astype(np.float64)       
 
-    corres_map, corres_map_sym = pyFF.pyFaceFrontalizationMapping(mask, width, height, nChannels, tri_ind, 
-                                                                  all_vertex_src, all_vertex_ref, all_ver_dim, all_ver_length,
-                                                                  all_tri, all_tri_dim, all_tri_length, bg_tri_num,
-                                                                  valid_tri_half, vertex_length, tri_length, 
-                                                                  sym_tri_list, symlist_length)
+    corres_map, corres_map_sym = pyFF.pyFaceFrontalizationMapping(
+        mask, width, height, nChannels, tri_ind, all_vertex_src, all_vertex_ref, all_ver_dim, all_ver_length,
+        all_tri, all_tri_dim, all_tri_length, bg_tri_num, valid_tri_half, vertex_length, tri_length,
+        sym_tri_list, symlist_length)
     # corres_map = corres_map + 1
     # corres_map_sym = corres_map_sym + 1
 
