@@ -121,7 +121,7 @@ def main():
                 elapsed_time2 = current_time - start_time
 
                 ss = time.time()
-                lala =  TDDFAPredictor.decode(tddfa(frame, landmarks, rgb=False, two_steps=True))
+                lala = TDDFAPredictor.decode(tddfa(frame, landmarks, rgb=False, two_steps=True))
                 print(time.time() - ss)
 
                 # Textural output

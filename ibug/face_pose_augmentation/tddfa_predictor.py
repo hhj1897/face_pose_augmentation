@@ -2,6 +2,7 @@ import os
 import cv2
 import torch
 import numpy as np
+from scipy.io import loadmat
 from types import SimpleNamespace
 from .tddfa import mobilenet_v1
 from .tddfa.utils.inference import parse_roi_box_from_landmark, crop_img, predict_68pts
@@ -9,6 +10,8 @@ from .tddfa_utils import parse_param_pose, reconstruct_from_3dmm
 
 
 class TDDFAPredictor(object):
+    tri = loadmat(os.path.join(os.path.dirname(__file__), 'tddfa', 'visualize', 'tri.mat'))['tri']
+
     def __init__(self, device='cuda:0', model=None, config=None):
         self.device = device
         if model is None:
@@ -64,40 +67,40 @@ class TDDFAPredictor(object):
                 (0, 3, 1, 2)).astype(np.float32)).to(self.device) - 127.5) / 128.0
 
             # Get 3DMM parameters
-            tdmm_params = self.net(face_patches).cpu().numpy()
+            params = self.net(face_patches).cpu().numpy()
             if two_steps:
                 landmarks = []
-                for param, roi_box in zip(tdmm_params, roi_boxes):
+                for param, roi_box in zip(params, roi_boxes):
                     landmarks.append(predict_68pts(param, roi_box).T)
                 return self.__call__(image, np.array(landmarks), rgb=False, two_steps=False)
             else:
-                return np.hstack((np.array(roi_boxes, dtype=np.float32), tdmm_params))
+                return np.hstack((np.array(roi_boxes, dtype=np.float32), params))
         else:
             return np.empty(shape=(0, 66), dtype=np.float32)
 
     @staticmethod
-    def decode(tddfa_result):
-        if tddfa_result.size > 0:
-            if tddfa_result.ndim > 1:
-                return [TDDFAPredictor.decode(x) for x in tddfa_result]
+    def decode(tdmm_params):
+        if tdmm_params.size > 0:
+            if tdmm_params.ndim > 1:
+                return [TDDFAPredictor.decode(x) for x in tdmm_params]
             else:
-                roi_box = tddfa_result[:4]
-                param = tddfa_result[4:]
-                vertex, pts68, fR, T = reconstruct_from_3dmm(param)
+                roi_box = tdmm_params[:4]
+                params = tdmm_params[4:]
+                vertex, pts68, fR, T = reconstruct_from_3dmm(params)
                 camera_transform = {'fR': fR, 'T': T}
-                yaw, pitch, roll, t3d, f = parse_param_pose(param)
+                yaw, pitch, roll, t3d, f = parse_param_pose(params)
                 face_pose = {'yaw': yaw, 'pitch': pitch, 'roll': roll, 't3d': t3d, 'f': f}
-                return {'roi_box': roi_box, 'param': param, 'vertex': vertex, 'pts68': pts68,
+                return {'roi_box': roi_box, 'params': params, 'vertex': vertex, 'pts68': pts68,
                         'face_pose': face_pose, 'camera_transform': camera_transform}
         else:
             return []
 
-    def project_vertex(self, decoded_result, dense=True):
-        vertex = (decoded_result['camera_transform']['fR'] @
-                  (decoded_result['vertex'] if dense else decoded_result['pts68']) +
-                  decoded_result['camera_transform']['T'])
+    def project_vertex(self, tddfa_result, dense=True):
+        vertex = (tddfa_result['camera_transform']['fR'] @
+                  (tddfa_result['vertex'] if dense else tddfa_result['pts68']) +
+                  tddfa_result['camera_transform']['T'])
 
-        sx, sy, ex, ey = decoded_result['roi_box']
+        sx, sy, ex, ey = tddfa_result['roi_box']
         scale_x = (ex - sx) / self.config.input_size
         scale_y = (ey - sy) / self.config.input_size
         vertex[0, :] = vertex[0, :] * scale_x + sx
