@@ -5,3 +5,6 @@
 build
 dist
 *.egg-info
+*.so
+*.pyd
+ibug/face_pose_augmentation/fpa/*.cpp
