@@ -4,44 +4,26 @@ import time
 import torch
 from argparse import ArgumentParser
 from ibug.face_alignment import FANPredictor
+from ibug.face_detection import RetinaFacePredictor
 from ibug.face_alignment.utils import plot_landmarks
-from ibug.face_detection import RetinaFacePredictor, S3FDPredictor
 from ibug.face_pose_augmentation import TDDFAPredictor
 
 
 def main() -> None:
     # Parse command-line arguments
     parser = ArgumentParser()
-    parser.add_argument('--input', '-i', help='Input video path or webcam index', default=0)
+    parser.add_argument('--input', '-i', help='Input video path or webcam index (default=0)', default=0)
     parser.add_argument('--output', '-o', help='Output file path', default=None)
+    parser.add_argument('--fourcc', '-f', help='FourCC of the output video (default=mp4v)',
+                        type=str, default='mp4v')
     parser.add_argument('--benchmark', '-b', help='Enable benchmark mode for CUDNN',
                         action='store_true', default=False)
     parser.add_argument('--no-display', '-n', help='No display if processing a video file',
                         action='store_true', default=False)
-
-    parser.add_argument('--detection-threshold', '-dt', type=float, default=0.8,
-                        help='Confidence threshold for face detection (default=0.8)')
-    parser.add_argument('--detection-method', '-dm', default='retinaface',
-                        help='Face detection method, can be either RatinaFace or S3FD (default=RatinaFace)')
-    parser.add_argument('--detection-weights', '-dw', default=None,
-                        help='Weights to be loaded for face detection, ' +
-                             'can be either resnet50 or mobilenet0.25 when using RetinaFace')
-    parser.add_argument('--detection-device', '-dd', default='cuda:0',
-                        help='Device to be used for face detection (default=cuda:0)')
-
-    parser.add_argument('--alignment-threshold', '-at', type=float, default=0.2,
-                        help='Score threshold used when visualising detected landmarks (default=0.2)'),
-    parser.add_argument('--alignment-method', '-am', default='fan',
-                        help='Face alignment method, must be set to FAN')
-    parser.add_argument('--alignment-weights', '-aw', default=None,
-                        help='Weights to be loaded for face alignment, can be either 2DFAN2 or 2DFAN4')
-    parser.add_argument('--alignment-device', '-ad', default='cuda:0',
-                        help='Device to be used for face alignment (default=cuda:0)')
-
-    parser.add_argument('--tddfa-weights', '-tw', default=None,
+    parser.add_argument('--weights', '-w', default=None,
                         help='Weights to be loaded by 3DDFA, must be set to mobilenet1')
-    parser.add_argument('--tddfa-device', '-td', default='cuda:0',
-                        help='Device to be used by 3DDFA.')
+    parser.add_argument('--device', '-d', default='cuda:0',
+                        help='Device to be used by all models (default=cuda:0')
     args = parser.parse_args()
 
     # Set benchmark mode flag for CUDNN
@@ -52,34 +34,16 @@ def main() -> None:
     has_window = False
     try:
         # Create the face detector
-        args.detection_method = args.detection_method.lower()
-        if args.detection_method == 'retinaface':
-            face_detector = RetinaFacePredictor(threshold=args.detection_threshold, device=args.detection_device,
-                                                model=(RetinaFacePredictor.get_model(args.detection_weights)
-                                                       if args.detection_weights else None))
-            print('Face detector created using RetinaFace.')
-        elif args.detection_method == 's3fd':
-            face_detector = S3FDPredictor(threshold=args.detection_threshold, device=args.detection_device,
-                                          model=(S3FDPredictor.get_model(args.detection_weights)
-                                                 if args.detection_weights else None))
-            print('Face detector created using S3FD.')
-        else:
-            raise ValueError('detector-method must be set to either RetinaFace or S3FD')
+        face_detector = RetinaFacePredictor(device=args.device, model=RetinaFacePredictor.get_model('mobilenet0.25'))
+        print('Face detector created.')
 
         # Create the landmark detector
-        args.alignment_method = args.alignment_method.lower()
-        if args.alignment_method == 'fan':
-            landmark_detector = FANPredictor(device=args.alignment_device,
-                                             model=(FANPredictor.get_model(args.alignment_weights)
-                                                    if args.alignment_weights else None))
-            print('Landmark detector created using FAN.')
-        else:
-            raise ValueError('alignment-method must be set to FAN')
+        landmark_detector = FANPredictor(device=args.device, model=FANPredictor.get_model('2dfan2'))
+        print('Landmark detector created.')
 
         # Instantiate 3DDFA
-        tddfa = TDDFAPredictor(device=args.tddfa_device,
-                               model=(TDDFAPredictor.get_model(args.tddfa_weights)
-                                      if args.tddfa_weights else None))
+        tddfa = TDDFAPredictor(device=args.device, model=(TDDFAPredictor.get_model(args.weights)
+                                                          if args.weights else None))
         print('3DDFA initialised.')
 
         # Open the input video
@@ -93,10 +57,11 @@ def main() -> None:
 
         # Open the output video (if a path is given)
         if args.output is not None:
-            out_vid = cv2.VideoWriter(args.output, apiPreference=cv2.CAP_FFMPEG, fps=vid.get(cv2.CAP_PROP_FPS),
+            out_vid = cv2.VideoWriter(args.output, fps=vid.get(cv2.CAP_PROP_FPS),
                                       frameSize=(int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)),
                                                  int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))),
-                                      fourcc=cv2.VideoWriter_fourcc('m', 'p', '4', 'v'))
+                                      fourcc=cv2.VideoWriter_fourcc(*args.fourcc))
+            assert out_vid.isOpened()
 
         # Process the frames
         frame_number = 0
