@@ -4,15 +4,20 @@ import torch
 import numpy as np
 from scipy.io import loadmat
 from types import SimpleNamespace
+from typing import Union, Optional, List, Dict
 from .tddfa import mobilenet_v1
 from .tddfa.utils.inference import parse_roi_box_from_landmark, crop_img, predict_68pts
 from .tddfa_utils import parse_param_pose, reconstruct_from_3dmm
 
 
+__all__ = ['TDDFAPredictor']
+
+
 class TDDFAPredictor(object):
     tri = loadmat(os.path.join(os.path.dirname(__file__), 'tddfa', 'visualize', 'tri.mat'))['tri']
 
-    def __init__(self, device='cuda:0', model=None, config=None):
+    def __init__(self, device: Union[str, torch.device] = 'cuda:0', model: Optional[SimpleNamespace] = None,
+                 config: Optional[SimpleNamespace] = None) -> None:
         self.device = device
         if model is None:
             model = TDDFAPredictor.get_model()
@@ -34,7 +39,7 @@ class TDDFAPredictor(object):
                                                             self.config.input_size).to(self.device))
 
     @staticmethod
-    def get_model(name='mobilenet1'):
+    def get_model(name: str = 'mobilenet1') -> SimpleNamespace:
         name = name.lower()
         if name == 'mobilenet1':
             return SimpleNamespace(weights=os.path.join(os.path.dirname(mobilenet_v1.__file__),
@@ -44,11 +49,12 @@ class TDDFAPredictor(object):
             raise ValueError('name must be set to mobilenet')
 
     @staticmethod
-    def create_config(use_jit=True):
+    def create_config(use_jit: bool = True) -> SimpleNamespace:
         return SimpleNamespace(use_jit=use_jit)
 
     @torch.no_grad()
-    def __call__(self, image, landmarks, rgb=True, two_steps=False):
+    def __call__(self, image: np.ndarray, landmarks: np.ndarray, rgb: bool = True,
+                 two_steps: bool = False) -> np.ndarray:
         if landmarks.size > 0:
             # Preparation
             if rgb:
@@ -79,7 +85,7 @@ class TDDFAPredictor(object):
             return np.empty(shape=(0, 66), dtype=np.float32)
 
     @staticmethod
-    def decode(tdmm_params):
+    def decode(tdmm_params: np.ndarray) -> List[Dict]:
         if tdmm_params.size > 0:
             if tdmm_params.ndim > 1:
                 return [TDDFAPredictor.decode(x) for x in tdmm_params]
@@ -95,7 +101,7 @@ class TDDFAPredictor(object):
         else:
             return []
 
-    def project_vertex(self, tddfa_result, dense=True):
+    def project_vertex(self, tddfa_result: Dict, dense: bool = True) -> np.ndarray:
         vertex = (tddfa_result['camera_transform']['fR'] @
                   (tddfa_result['vertex'] if dense else tddfa_result['pts68']) +
                   tddfa_result['camera_transform']['T'])

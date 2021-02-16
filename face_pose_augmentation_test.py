@@ -9,7 +9,7 @@ from ibug.face_detection import RetinaFacePredictor, S3FDPredictor
 from ibug.face_pose_augmentation import TDDFAPredictor
 
 
-def main():
+def main() -> None:
     # Parse command-line arguments
     parser = ArgumentParser()
     parser.add_argument('--input', '-i', help='Input video path or webcam index', default=0)

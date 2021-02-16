@@ -1,4 +1,4 @@
-# face_pose_augmentation
+# ibug.face_pose_augmentation
 A toolbox for face pose augmentation based on [3DDFA](https://ieeexplore.ieee.org/iel7/34/4359286/08122025.pdf) \[1\].
 
 ## Prerequisites
