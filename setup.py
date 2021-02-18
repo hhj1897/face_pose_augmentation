@@ -32,11 +32,6 @@ if _version is None:
 # Configure cython modules
 package_location = ['ibug', 'face_pose_augmentation', 'fpa']
 extensions = [
-    Extension('.'.join(package_location + ['pyFaceProfiling']),
-              sources=[os.path.join(*(package_location + ['pyFaceProfiling.pyx'])),
-                       os.path.join(*(package_location + ['cpp', 'face_profiling.cpp']))],
-              include_dirs=[np.get_include()],
-              language='c++'),
     Extension('.'.join(package_location + ['pyMM3D']),
               sources=[os.path.join(*(package_location + ['pyMM3D.pyx'])),
                        os.path.join(*(package_location + ['cpp', 'MM3D.cpp']))],

@@ -14,7 +14,7 @@ __all__ = ['TDDFAPredictor']
 
 
 class TDDFAPredictor(object):
-    tri = loadmat(os.path.join(os.path.dirname(__file__), 'tddfa', 'visualize', 'tri.mat'))['tri']
+    tri: [np.ndarray] = loadmat(os.path.join(os.path.dirname(__file__), 'tddfa', 'visualize', 'tri.mat'))['tri']
 
     def __init__(self, device: Union[str, torch.device] = 'cuda:0', model: Optional[SimpleNamespace] = None,
                  config: Optional[SimpleNamespace] = None) -> None:

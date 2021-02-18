@@ -4,7 +4,6 @@ import itertools
 import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
-from . import pyFaceProfiling as pyFP
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
 from .pytUtils import RotationMatrix, ProjectShape, ImageMeshing, ImageRotation, \

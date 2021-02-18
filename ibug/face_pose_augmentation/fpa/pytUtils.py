@@ -610,18 +610,19 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     all_vertex_ref = ProjectShape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
     
     # 2. Landmark marching 
-    if yaw < 0:
+    if yaw_ref < 0:
         face_contour_modify = np.array(list(range(8)) + list(range(24,30)))
     else:
         face_contour_modify = np.array(range(9,23))
 
-    adjust_ind = list(range(3,14)) + list(range(18,30))
-    yaw_delta = yaw_ref - yaw
-    yaw_temp = yaw + yaw_delta/2.5    
+    adjust_ind = list(range(3, 14)) + list(range(18, 30))
+    yaw_base = min(yaw, 0) if yaw_ref < 0 else max(0, yaw)
+    yaw_delta = yaw_ref - yaw_base
+    yaw_temp = yaw_base + yaw_delta / 2.5
 
-    face_contour_ind  = KeypointsWithPose(pitch_ref, yaw_temp, roll_ref, vertex, tri, 
-                                          isoline_face_contour, face_contour_ind, face_contour_modify)
-    face_contour_ind2 = KeypointsWithPose(pitch_ref, yaw, roll_ref, vertex, tri, 
+    face_contour_ind = KeypointsWithPose(pitch_ref, yaw_temp, roll_ref, vertex, tri,
+                                         isoline_face_contour, face_contour_ind, face_contour_modify)
+    face_contour_ind2 = KeypointsWithPose(pitch_ref, yaw_base, roll_ref, vertex, tri,
                                           isoline_face_contour, face_contour_ind, face_contour_modify)
     face_contour_ind[adjust_ind] = face_contour_ind2[adjust_ind]
     face_contour_ref = ProjectVertex_ref[:, face_contour_ind]
