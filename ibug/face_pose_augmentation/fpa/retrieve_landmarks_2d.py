@@ -1,10 +1,10 @@
 import numpy as np
 from copy import deepcopy
-from .pytUtils import RotationMatrix, ProjectShape
+from .pytUtils import make_rotation_matrix, ProjectShape
 
 
 def landmark_marching(pitch, yaw, roll, vertex, isoline, keypoints):  
-    ProjectVertex = np.dot(RotationMatrix(pitch, yaw, roll), vertex)
+    ProjectVertex = np.dot(make_rotation_matrix(pitch, yaw, roll), vertex)
     ProjectVertex = ProjectVertex - np.min(ProjectVertex, axis=1)[:, np.newaxis] + 1
     ProjectVertex /= np.max(np.abs(ProjectVertex))
     
@@ -61,7 +61,7 @@ def retrieve_contour_landmark_aug(new_result, old_result, face_models):
     new_pitch, new_yaw, new_roll = [new_result['face_pose'][key] for key in ['pitch', 'yaw', 'roll']]
 
     # prepare transform matrix for rotated mesh
-    new_fR = f*RotationMatrix(new_pitch, new_yaw, new_roll)
+    new_fR = f*make_rotation_matrix(new_pitch, new_yaw, new_roll)
     new_t3d = np.mean(fR.dot(vertex)+T, axis=1) - np.mean(new_fR.dot(vertex), axis=1)    
     
     # start retrieving 2D-style landmarks

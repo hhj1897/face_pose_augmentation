@@ -4,8 +4,8 @@ import itertools
 import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
-from .pytUtils import RotationMatrix, ProjectShape, ImageMeshing, ImageRotation, \
-    FaceFrontalizationFilling, FaceFrontalizationMappingNosym, ModelCompletionBFM_v2, \
+from .pytUtils import make_rotation_matrix, ProjectShape, ImageMeshing, ImageRotation, \
+    FaceFrontalizationFilling, FaceFrontalizationMappingNosym, model_completion_bfm, \
     ZBufferTri, calc_barycentric_coordinates
 
 import time
@@ -23,10 +23,10 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
     t3d, f = fit_result['face_pose']['t3d'], fit_result['face_pose']['f']
 
     ss = time.time()
-    vertex_full, tri_full = ModelCompletionBFM_v2(vertex, face_models['Model_FWH'],
-                                                  face_models['Model_Completion'], face_models['conn_point_info'])
-    vertexm_full, _ = ModelCompletionBFM_v2(face_models['vertex_noear_BFM'], face_models['Model_FWH'],
-                                            face_models['Model_Completion'], face_models['conn_point_info'])
+    vertex_full, tri_full = model_completion_bfm(vertex, face_models['Model_FWH'],
+                                                 face_models['Model_Completion'], face_models['conn_point_info'])
+    vertexm_full, _ = model_completion_bfm(face_models['vertex_noear_BFM'], face_models['Model_FWH'],
+                                           face_models['Model_Completion'], face_models['conn_point_info'])
     print(time.time() - ss)
 
     height, width = image.shape[:2]
@@ -111,7 +111,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         pitch_ref = pitch + pitch_delta
         yaw_ref   = yaw + yaw_delta
         roll_ref  = roll + roll_delta
-        R_ref = RotationMatrix(pitch_ref, yaw_ref, roll_ref)
+        R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
 
         t3d_ref = np.mean(fR.dot(vertex_full)+T, axis=1) - np.mean(f*R_ref.dot(vertex_full), axis=1)
         RefVertex = ProjectShape(vertex_full, f*R_ref, t3d_ref[:, np.newaxis], roi_box)

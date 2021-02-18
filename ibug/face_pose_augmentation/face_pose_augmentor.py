@@ -22,27 +22,35 @@ class FacePoseAugmentor(object):
         fpa_models = dict()
 
         m_fwh = loadmat(os.path.join(model_folder, 'Model_FWH.mat'))
-        fpa_models['Model_FWH'] = m_fwh['Model_FWH']
+        fpa_models['Model_FWH'] = {
+            'mu': np.squeeze(m_fwh['Model_FWH']['mu'][0, 0]),
+            'w': np.squeeze(m_fwh['Model_FWH']['w'][0, 0]),
+            'sigma': np.squeeze(m_fwh['Model_FWH']['sigma'][0, 0])}
         fpa_models['vertex_noear_BFM'] = m_fwh['vertex_noear_BFM']
 
-        fpa_models['Model_Completion'] = loadmat(os.path.join(model_folder, 'Model_Completion.mat'))
+        m_model_completion = loadmat(os.path.join(model_folder, 'Model_Completion.mat'))
+        fpa_models['Model_Completion'] = {
+            'indf_c': np.squeeze(m_model_completion['indf_c']).astype(int) - 1,
+            'indf_c2b': np.squeeze(m_model_completion['indf_c2b']).astype(int) - 1,
+            'trif_stitch': np.squeeze(m_model_completion['trif_stitch']).astype(int) - 1,
+            'trif_backhead': np.squeeze(m_model_completion['trif_backhead']).astype(int) - 1}
 
         m_face_tri = loadmat(os.path.join(model_folder, 'Model_face_tri.mat'))
-        fpa_models['tri'] = m_face_tri['tri'] - 1
+        fpa_models['tri'] = m_face_tri['tri'].astype(int) - 1
 
         m_tri_mouth = loadmat(os.path.join(model_folder, 'Model_tri_mouth.mat'))
-        fpa_models['tri_mouth'] = m_tri_mouth['tri_mouth'] - 1
+        fpa_models['tri_mouth'] = m_tri_mouth['tri_mouth'].astype(int) - 1
         fpa_models['tri_plus'] = np.hstack([fpa_models['tri'], fpa_models['tri_mouth']])
         fpa_models['layer_width'] = np.array([0.1, 0.15, 0.2, 0.25, 0.3])
 
         m_face_contour_trimed = loadmat(os.path.join(model_folder, 'Model_face_contour_trimed.mat'))
-        fpa_models['face_contour_ind'] = m_face_contour_trimed['face_contour']
+        fpa_models['face_contour_ind'] = m_face_contour_trimed['face_contour'].astype(int)
 
         m_fullmod_contour = loadmat(os.path.join(model_folder, 'Model_fullmod_contour.mat'))
         m_keypoints = loadmat(os.path.join(model_folder, 'Model_keypoints.mat'))
-        fpa_models['keypoints'] = m_keypoints['keypoints'].ravel() - 1
-        fpa_models['keypointsfull_contour'] = m_fullmod_contour['keypointsfull_contour'].ravel() - 1
-        fpa_models['parallelfull_contour'] = [item[0][0].ravel() - 1 for item in
+        fpa_models['keypoints'] = np.squeeze(m_keypoints['keypoints']).astype(int) - 1
+        fpa_models['keypointsfull_contour'] = np.squeeze(m_fullmod_contour['keypointsfull_contour']).astype(int) - 1
+        fpa_models['parallelfull_contour'] = [np.squeeze(item[0][0]).astype(int) - 1 for item in
                                               m_fullmod_contour['parallelfull_contour']]
 
         fpa_models['conn_point_info'] = precompute_conn_point(fpa_models['tri_plus'], fpa_models['Model_Completion'])

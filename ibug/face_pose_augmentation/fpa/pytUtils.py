@@ -1,4 +1,5 @@
-from typing import Dict
+import torch
+from typing import Dict, Tuple
 import numpy as np
 import math
 
@@ -9,13 +10,15 @@ from collections import defaultdict
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
 
+import time
 
-__all__ = ['precompute_conn_point']
+
+__all__ = ['make_rotation_matrix', 'precompute_conn_point', 'model_completion_bfm']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
-    trif_stitch = model_completion['trif_stitch'].astype(int) - 1
-    trif_backhead = model_completion['trif_backhead'].astype(int) - 1
+    trif_stitch = model_completion['trif_stitch']
+    trif_backhead = model_completion['trif_backhead']
     tri_full = np.hstack([tri, trif_backhead, trif_stitch])
 
     stitch_point = np.unique(trif_stitch)
@@ -29,6 +32,87 @@ def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
         conn_point_info['dict'][ind] = conn_point
 
     return conn_point_info
+
+
+def make_rotation_matrix(pitch: float, yaw: float, roll: float, zyx_order: bool = True) -> np.ndarray:
+    # Make rotation matrix by Euler angles
+    rx = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(pitch), -np.sin(pitch)], [0.0, np.sin(pitch), np.cos(pitch)]])
+    ry = np.array([[np.cos(yaw), 0.0, np.sin(yaw)], [0.0, 1.0, 0.0], [-np.sin(yaw), 0.0, np.cos(yaw)]])
+    rz = np.array([[np.cos(roll), -np.sin(roll), 0.0,], [np.sin(roll), np.cos(roll), 0.0], [0.0, 0.0, 1.0]])
+    if zyx_order:
+        return rz @ ry @ rx
+    else:
+        return rx @ ry @ rz
+
+
+def fit_model_with_valid_points(pt3d, model, valid_ind):
+    mu = model['mu']
+    w = model['w']
+    sigma = model['sigma']
+
+    keypoints1 = np.vstack([3 * valid_ind, 3 * valid_ind+1, 3 * valid_ind+2])
+    keypoints1 = keypoints1.ravel('F')
+
+    alpha = np.zeros(w.shape[1])
+    f, R, t = 1, np.eye(3), np.zeros(3)
+
+    mu_key = mu[keypoints1]
+    mu_key_rs = mu_key.reshape((3, -1), order='F')
+
+    w_key = w[keypoints1]
+    w_key_rs = w_key.reshape((3, -1), order='F')
+
+    iterations = 5
+    for _ in range(iterations):
+        # 1. Pose Estimate
+        vertex_key = mu_key + w_key.dot(alpha)
+        vertex_key = vertex_key.reshape((3, -1), order='F')
+
+        f, R, t = AlignPoints(vertex_key, pt3d)
+
+        # 2.shape fitting
+        beta = 3000
+        # alpha = FittingShape3D(pt3d, f, R, t, mu_key, w_key, sigma, beta)
+        alpha = FittingShape3D_v2(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
+
+    phi, gamma, theta = RotationMatrix2Angle(R)
+
+    return f, phi, gamma, theta, t, alpha
+
+
+def model_completion_bfm(projected_vertex: np.ndarray, model_fullhead: Dict,
+                         model_completion: Dict, conn_point_info: Dict) -> Tuple[Dict, Dict]:
+    muf = model_fullhead['mu']
+    wf = model_fullhead['w']
+
+    indf_c = model_completion['indf_c']
+    indf_c2b = model_completion['indf_c2b']
+
+    projected_vertex_c2b = projected_vertex[:, indf_c2b]
+
+    f, phi, gamma, theta, t, alpha = fit_model_with_valid_points(projected_vertex_c2b, model_fullhead, indf_c)
+
+    vertexf = muf + wf.dot(alpha)
+    vertexf = vertexf.reshape((3, -1), order='F')
+    projected_vertexf = f * make_rotation_matrix(phi, gamma, theta, False).dot(vertexf) + t[:, np.newaxis]
+
+    projected_vertex_full = np.hstack([projected_vertex, projected_vertexf])
+    tri_full = conn_point_info['tri_full']
+
+    # blend
+    iterations = 1
+    stitch_point = conn_point_info['stitch_point']
+    for _ in range(iterations):
+        vertex_blend = projected_vertex_full.copy()
+        for ind in stitch_point:
+            # blur the i_th ind
+            conn_point = conn_point_info['dict'][ind]
+            vertex_blend[:, ind] = np.mean(projected_vertex_full[:, conn_point], axis=1)
+        projected_vertex_full = vertex_blend
+
+    return projected_vertex_full, tri_full
+
+##### hhj: Unorganised #####
 
 
 def ProjectShape(vertex, fR, T, roi_bbox, STD_SIZE=120):    
@@ -107,19 +191,8 @@ def ZBufferTri(projectedVertex, tri, texture_tri, img_src):
     return np.squeeze(img), np.squeeze(tri_ind)
 
 
-def RotationMatrix(pitch, yaw, roll, zyx_order=True):
-    # get rotation matrix by rotate angle    
-    R_x = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(pitch), -np.sin(pitch)], [0.0, np.sin(pitch), np.cos(pitch)]])
-    R_y = np.array([[np.cos(yaw), 0.0, np.sin(yaw)], [0.0, 1.0, 0.0], [-np.sin(yaw), 0.0, np.cos(yaw)]])
-    R_z = np.array([[np.cos(roll), -np.sin(roll), 0.0,], [np.sin(roll), np.cos(roll), 0.0], [0.0, 0.0, 1.0]])    
-    if zyx_order:
-        return R_z @ R_y @ R_x
-    else:
-        return R_x @ R_y @ R_z
-
-
 def KeypointsWithPose(pitch, yaw, roll, vertex, tri, isoline, keypoints, modify_ind, candidates=None):    
-    ProjectVertex = np.dot(RotationMatrix(pitch, yaw, 0), vertex)
+    ProjectVertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
     ProjectVertex = ProjectVertex - np.min(ProjectVertex, axis=1)[:, np.newaxis] + 1
     ProjectVertex /= np.max(np.abs(ProjectVertex))
     
@@ -624,7 +697,7 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     # 1. get the preliminary position on the ref frame    
     all_vertex_ref = BackProjectShape(all_vertex, fR, T, roi_box)
     # Go to the reference position
-    R_ref = RotationMatrix(pitch_ref, yaw_ref, roll_ref)
+    R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
     all_vertex_ref = ProjectShape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
     
     # 2. Landmark marching 
@@ -891,135 +964,7 @@ def FittingShape3D_v2(pt3d, f, R, t, mu, w, sigma, beta):
     equationRight = w3d.T.dot((pt3d-s3d-t3d).ravel('F'))
     alpha = np.linalg.lstsq(equationLeft, equationRight, rcond=None)[0]
 
-    return alpha    
-
-
-def FittingModel3D_validpoint(pt3d, Model, valid_ind):
-    iteration = 0
-    maxiteration = 4
-
-    mu = np.squeeze(Model['mu'][0,0])
-    w = Model['w'][0,0]
-    sigma = np.squeeze(Model['sigma'][0,0])
-    # tri = Model['tri'][0,0]
-
-    keypoints1 = np.vstack([3*valid_ind, 3*valid_ind+1, 3*valid_ind+2])
-    keypoints1 = keypoints1.ravel('F')
-
-    alpha = np.zeros(w.shape[1])
-    f, R, t = 1, np.eye(3), np.zeros(3)
-
-    mu_key = mu[keypoints1]
-    mu_key_rs = mu_key.reshape((3,-1), order='F')
-
-    w_key = w[keypoints1]        
-    w_key_rs = w_key.reshape((3,-1), order='F')   
-
-    # Firstly pose and expression
-    while True:
-        if iteration > maxiteration:
-            break
-
-        iteration += 1
-
-        # 1. Pose Estimate  
-        vertex_key = mu_key + w_key.dot(alpha)    
-        vertex_key = vertex_key.reshape((3,-1), order='F')
-
-        f, R, t = AlignPoints(vertex_key, pt3d)
-
-        # 2.shape fitting
-        beta = 3000
-        # alpha = FittingShape3D(pt3d, f, R, t, mu_key, w_key, sigma, beta)
-        alpha = FittingShape3D_v2(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
-
-    phi, gamma, theta = RotationMatrix2Angle(R) 
-
-    return f, phi, gamma, theta, t, alpha
-
-
-def ModelCompletionBFM(ProjectVertex, tri, model_fullhead, model_completion):    
-    muf  = np.squeeze(model_fullhead['mu'][0,0])
-    wf   = model_fullhead['w'][0,0]
-    trif = model_fullhead['tri'][0,0] - 1
-
-    indf_c = np.squeeze(model_completion['indf_c'].astype(np.int)) - 1
-    indf_c2b = np.squeeze(model_completion['indf_c2b'].astype(np.int)) - 1
-    trif_stitch = model_completion['trif_stitch'].astype(np.int) - 1
-    trif_backhead = model_completion['trif_backhead'].astype(np.int) - 1
-
-    ProjectVertex_c2b = ProjectVertex[:, indf_c2b]
-
-    f, phi, gamma, theta, t, alpha = FittingModel3D_validpoint(ProjectVertex_c2b, model_fullhead, indf_c)
-    
-    vertexf = muf + wf.dot(alpha)
-    vertexf = vertexf.reshape((3,-1), order='F')
-    ProjectVertexf = f*RotationMatrix(phi, gamma, theta, False).dot(vertexf) + t[:,np.newaxis]
-
-    ProjectVertex_full = np.hstack([ProjectVertex, ProjectVertexf])
-    tri_full = np.hstack([tri, trif_backhead, trif_stitch])
-
-    # blend
-    iteration = 1
-
-    vertex_blend = deepcopy(ProjectVertex_full)
-    stitch_point = np.unique(trif_stitch)
-
-    for _ in range(iteration):    
-        vertex_temp = deepcopy(vertex_blend)
-        for i in range(len(stitch_point)):
-            ind = stitch_point[i] # blur the ith ind        
-            conn_tri = np.any(tri_full == ind, axis=0)         
-            conn_tri = tri_full[:, conn_tri]
-            conn_point = np.unique(conn_tri)
-            vertex_temp[:,ind] = np.mean(vertex_blend[:,conn_point], axis=1)    
-        vertex_blend = deepcopy(vertex_temp)
-
-    ProjectVertex_full = vertex_blend
-
-    return ProjectVertex_full, tri_full
-
-
-def ModelCompletionBFM_v2(ProjectVertex, model_fullhead, model_completion, conn_point_info):
-    muf  = np.squeeze(model_fullhead['mu'][0, 0])
-    wf   = model_fullhead['w'][0,0]
-    # trif = model_fullhead['tri'][0,0] - 1
-
-    indf_c = np.squeeze(model_completion['indf_c'].astype(np.int)) - 1
-    indf_c2b = np.squeeze(model_completion['indf_c2b'].astype(np.int)) - 1
-    #     trif_stitch = model_completion['trif_stitch'].astype(np.int) - 1
-    #     trif_backhead = model_completion['trif_backhead'].astype(np.int) - 1
-
-    ProjectVertex_c2b = ProjectVertex[:, indf_c2b]
-
-    f, phi, gamma, theta, t, alpha = FittingModel3D_validpoint(ProjectVertex_c2b, model_fullhead, indf_c)
-    
-    vertexf = muf + wf.dot(alpha)
-    vertexf = vertexf.reshape((3,-1), order='F')
-    ProjectVertexf = f*RotationMatrix(phi, gamma, theta, False).dot(vertexf) + t[:,np.newaxis]
-
-    ProjectVertex_full = np.hstack([ProjectVertex, ProjectVertexf])
-    #     tri_full = np.hstack([tri, trif_backhead, trif_stitch])    
-    tri_full = conn_point_info['tri_full']
-    
-    # blend
-    iteration = 1
-
-    vertex_blend = deepcopy(ProjectVertex_full)
-    #     stitch_point = np.unique(trif_stitch)
-    stitch_point = conn_point_info['stitch_point']
-        
-    for _ in range(iteration):    
-        vertex_temp = deepcopy(vertex_blend)
-        for ind in stitch_point:
-            # blur the i_th ind    
-            conn_point = conn_point_info['dict'][ind]
-            vertex_temp[:,ind] = np.mean(vertex_blend[:,conn_point], axis=1)      
-        vertex_blend = deepcopy(vertex_temp)
-
-    ProjectVertex_full = vertex_blend        
-
-    return ProjectVertex_full, tri_full
+    return alpha
 
 
 def calc_barycentric_coordinates(pt, vertices, tri_list):
