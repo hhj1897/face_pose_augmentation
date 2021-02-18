@@ -2,11 +2,12 @@ import os
 import cv2
 import time
 import torch
+import numpy as np
 from argparse import ArgumentParser
 from ibug.face_alignment import FANPredictor
 from ibug.face_detection import RetinaFacePredictor
 from ibug.face_alignment.utils import plot_landmarks
-from ibug.face_pose_augmentation import TDDFAPredictor
+from ibug.face_pose_augmentation import TDDFAPredictor, FacePoseAugmentor
 
 
 def main() -> None:
@@ -46,6 +47,10 @@ def main() -> None:
                                                           if args.weights else None))
         print('3DDFA initialised.')
 
+        # Create the face pose augmentor
+        augmentor = FacePoseAugmentor()
+        print('Face pose augmentor created.')
+
         # Open the input video
         using_webcam = not os.path.exists(args.input)
         vid = cv2.VideoCapture(int(args.input) if using_webcam else args.input)
@@ -73,34 +78,53 @@ def main() -> None:
             if frame is None:
                 break
             else:
-                # Detect faces
+                # Detect faces and landmarks
                 start_time = time.time()
                 faces = face_detector(frame, rgb=False)
-                current_time = time.time()
-                elapsed_time = current_time - start_time
-
-                # Face alignment
-                start_time = current_time
                 landmarks, scores = landmark_detector(frame, faces, rgb=False)
+                current_time = time.time()
+                elapsed_time1 = current_time - start_time
+
+                # Run TDDFA
+                start_time = current_time
+                tddfa_results = TDDFAPredictor.decode(tddfa(frame, landmarks, rgb=False, two_steps=True))
                 current_time = time.time()
                 elapsed_time2 = current_time - start_time
 
-                ss = time.time()
-                lala = TDDFAPredictor.decode(tddfa(frame, landmarks, rgb=False, two_steps=True))
-                print(time.time() - ss)
+                # Select the largest valid face (in which all landmark scores >= 0.2) for pose augmentation
+                selected_face_idx = -1
+                if faces.shape[0] > 0:
+                    valid_face_indices = np.where(scores.min(axis=-1) >= 0.2)[0]
+                    if len(valid_face_indices) > 0:
+                        valid_faces = faces[valid_face_indices]
+                        valid_face_sizes = ((valid_faces[:, 2] - valid_faces[:, 0]) *
+                                            (valid_faces[:, 3] - valid_faces[:, 1]))
+                        selected_face_idx = valid_face_indices[np.argmax(valid_face_sizes)]
+
+                # Render all other faces before pose augmentation
+                for idx, (face, result) in enumerate(zip(faces, tddfa_results)):
+                    if idx != selected_face_idx:
+                        lms = tddfa.project_vertex(result, False)
+                        plot_landmarks(frame, lms[:, :2], line_colour=(255, 0, 0), pts_colour=(255, 0, 255))
+                        if len(face) > 5:
+                            plot_landmarks(frame, face[5:].reshape((-1, 2)), pts_radius=3,
+                                           line_colour=(255, 0, 0), pts_colour=(255, 0, 255))
+
+                # Pose augmentation!
+                start_time = time.time()
+                if selected_face_idx >= 0:
+                    print(tddfa_results[selected_face_idx]['face_pose']['pitch'],
+                          tddfa_results[selected_face_idx]['face_pose']['yaw'])
+                    augmentation_result = augmentor(frame, tddfa_results[selected_face_idx],
+                                                    np.array([40.0, -45.0, 0.0]) / 180.0 * np.pi)
+                    frame = augmentation_result['warped_image']
+                current_time = time.time()
+                elapsed_time3 = current_time - start_time
 
                 # Textural output
-                print(f'Frame #{frame_number} processed in {elapsed_time * 1000.0:.04f} + ' +
-                      f'{elapsed_time2 * 1000.0:.04f} ms: {len(faces)} faces analysed..')
-
-                # Rendering
-                for face, yy in zip(faces, lala):
-                    bbox = face[:4].astype(int)
-                    cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color=(0, 0, 255), thickness=2)
-                    lm = tddfa.project_vertex(yy, False)
-                    plot_landmarks(frame, lm[:, :2])
-                    if len(face) > 5:
-                        plot_landmarks(frame, face[5:].reshape((-1, 2)), pts_radius=3)
+                print(f'Frame #{frame_number} processed in {elapsed_time1 * 1000.0:.04f} + ' +
+                      f'{elapsed_time2 * 1000.0:.04f} + ' + f'{elapsed_time3 * 1000.0:.04f} ms: ' +
+                      f'{len(faces)} faces analysed..')
 
                 # Write the frame to output video (if recording)
                 if out_vid is not None:
