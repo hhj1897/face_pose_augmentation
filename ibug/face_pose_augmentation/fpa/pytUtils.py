@@ -1,7 +1,4 @@
-## This implementation is modified based on the pytorch version of 3DDFA: 
-## # https://github.com/cleardusk/3DDFA
-## wirtten in python 3.5
-
+from typing import Dict
 import numpy as np
 import math
 
@@ -10,7 +7,28 @@ from copy import deepcopy
 from collections import defaultdict
 
 from . import pyFaceFrontalization as pyFF
-from .pyMM3D import pyMM3D as pyMM
+from . import pyMM3D as pyMM
+
+
+__all__ = ['precompute_conn_point']
+
+
+def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
+    trif_stitch = model_completion['trif_stitch'].astype(int) - 1
+    trif_backhead = model_completion['trif_backhead'].astype(int) - 1
+    tri_full = np.hstack([tri, trif_backhead, trif_stitch])
+
+    stitch_point = np.unique(trif_stitch)
+
+    conn_point_info = {'stitch_point': stitch_point, 'tri_full': tri_full, 'dict': defaultdict(lambda: [])}
+    for ind in stitch_point:
+        # blur the ith ind
+        conn_tri = np.any(tri_full == ind, axis=0)
+        conn_tri = tri_full[:, conn_tri]
+        conn_point = np.unique(conn_tri)
+        conn_point_info['dict'][ind] = conn_point
+
+    return conn_point_info
 
 
 def ProjectShape(vertex, fR, T, roi_bbox, STD_SIZE=120):    
@@ -58,7 +76,7 @@ def ZBuffer(projectedVertex, tri, texture, img_src):
     if not img_src.flags.f_contiguous:
         img_src = img_src.copy(order='F')
     
-    img, tri_ind = pyMM().ZBuffer(projectedVertex, tri, texture, img_src, nver, ntri, width, height, nChannels)     
+    img, tri_ind = pyMM.ZBuffer(projectedVertex, tri, texture, img_src, nver, ntri, width, height, nChannels)
     # tri_ind = tri_ind + 1
     
     return np.squeeze(img), np.squeeze(tri_ind)
@@ -83,7 +101,7 @@ def ZBufferTri(projectedVertex, tri, texture_tri, img_src):
     if not img_src.flags.f_contiguous:
         img_src = img_src.copy(order='F')
     
-    img, tri_ind = pyMM().ZBufferTri(projectedVertex, tri, texture_tri, img_src, nver, ntri, width, height, nChannels)    
+    img, tri_ind = pyMM.ZBufferTri(projectedVertex, tri, texture_tri, img_src, nver, ntri, width, height, nChannels)
     # tri_ind = tri_ind + 1
     
     return np.squeeze(img), np.squeeze(tri_ind)
@@ -959,30 +977,11 @@ def ModelCompletionBFM(ProjectVertex, tri, model_fullhead, model_completion):
 
     ProjectVertex_full = vertex_blend
 
-    return ProjectVertex_full, tri_full     
-
-
-def PrecomputeConnPoint(tri, model_completion):
-    trif_stitch = model_completion['trif_stitch'].astype(np.int) - 1
-    trif_backhead = model_completion['trif_backhead'].astype(np.int) - 1
-    tri_full = np.hstack([tri, trif_backhead, trif_stitch])
-
-    stitch_point = np.unique(trif_stitch)  
-    
-    conn_point_info = {'stitch_point': stitch_point, 'tri_full': tri_full}        
-    conn_point_info['dict'] = defaultdict(lambda: [])
-    for ind in stitch_point:
-        # blur the ith ind
-        conn_tri = np.any(tri_full == ind, axis=0)         
-        conn_tri = tri_full[:, conn_tri]            
-        conn_point = np.unique(conn_tri)
-        conn_point_info['dict'][ind] = conn_point
-    
-    return conn_point_info
+    return ProjectVertex_full, tri_full
 
 
 def ModelCompletionBFM_v2(ProjectVertex, model_fullhead, model_completion, conn_point_info):
-    muf  = np.squeeze(model_fullhead['mu'][0,0])
+    muf  = np.squeeze(model_fullhead['mu'][0, 0])
     wf   = model_fullhead['w'][0,0]
     # trif = model_fullhead['tri'][0,0] - 1
 

@@ -4,11 +4,11 @@ import itertools
 import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
-from . import pyFaceFrontalization as pyFF
-from . import pyMM3D as pyMM
 from .pytUtils import RotationMatrix, ProjectShape, ImageMeshing, ImageRotation, \
     FaceFrontalizationFilling, FaceFrontalizationMappingNosym, ModelCompletionBFM_v2, \
     ZBufferTri, calc_barycentric_coordinates
+
+import time
 
 
 def generate_profile_faces(delta_poses, fit_result, image, face_models, return_corres_map=False,
@@ -22,10 +22,12 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
     yaw, pitch, roll = [fit_result['face_pose'][key] for key in ['yaw', 'pitch', 'roll']]
     t3d, f = fit_result['face_pose']['t3d'], fit_result['face_pose']['f']
 
+    ss = time.time()
     vertex_full, tri_full = ModelCompletionBFM_v2(vertex, face_models['Model_FWH'],
                                                   face_models['Model_Completion'], face_models['conn_point_info'])
     vertexm_full, _ = ModelCompletionBFM_v2(face_models['vertex_noear_BFM'], face_models['Model_FWH'],
                                             face_models['Model_Completion'], face_models['conn_point_info'])
+    print(time.time() - ss)
 
     height, width = image.shape[:2]
     new_img = image.astype(np.float64, order='F') / 255.0

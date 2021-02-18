@@ -5,7 +5,7 @@ from scipy.io import loadmat
 from scipy.interpolate import interp1d
 from typing import Optional, Dict, Any, Union, List
 from .fpa import __file__ as fpa_init_file
-from .fpa.pytUtils import PrecomputeConnPoint
+from .fpa.pytUtils import precompute_conn_point
 from .fpa import generate_profile_faces, retrieve_contour_landmark_aug
 
 
@@ -45,7 +45,7 @@ class FacePoseAugmentor(object):
         fpa_models['parallelfull_contour'] = [item[0][0].ravel() - 1 for item in
                                               m_fullmod_contour['parallelfull_contour']]
 
-        fpa_models['conn_point_info'] = PrecomputeConnPoint(fpa_models['tri_plus'], fpa_models['Model_Completion'])
+        fpa_models['conn_point_info'] = precompute_conn_point(fpa_models['tri_plus'], fpa_models['Model_Completion'])
 
         # create new keypoint index and its corresponding contours
         n_points = np.max(fpa_models['tri']) + 1

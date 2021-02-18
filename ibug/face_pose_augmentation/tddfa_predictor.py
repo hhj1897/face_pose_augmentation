@@ -85,7 +85,7 @@ class TDDFAPredictor(object):
             return np.empty(shape=(0, 66), dtype=np.float32)
 
     @staticmethod
-    def decode(tdmm_params: np.ndarray) -> List[Dict]:
+    def decode(tdmm_params: np.ndarray) -> Union[Dict, List[Dict]]:
         if tdmm_params.size > 0:
             if tdmm_params.ndim > 1:
                 return [TDDFAPredictor.decode(x) for x in tdmm_params]
