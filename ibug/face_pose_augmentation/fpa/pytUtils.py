@@ -10,8 +10,6 @@ from collections import defaultdict
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
 
-import time
-
 
 __all__ = ['make_rotation_matrix', 'precompute_conn_point', 'model_completion_bfm']
 
@@ -153,8 +151,8 @@ def ZBuffer(projectedVertex, tri, texture, img_src):
         projectedVertex = projectedVertex.copy(order='F')
     if not tri.flags.f_contiguous:
         tri = tri.copy(order='F')
-    if tri.dtype != np.float64:
-        tri = tri.astype(np.float64)
+    if tri.dtype != np.int32:
+        tri = tri.astype(np.int32)
     if not texture.flags.f_contiguous:
         texture = texture.copy(order='F')
     if not img_src.flags.f_contiguous:
@@ -178,8 +176,8 @@ def ZBufferTri(projectedVertex, tri, texture_tri, img_src):
         projectedVertex = projectedVertex.copy(order='F')
     if not tri.flags.f_contiguous:
         tri = tri.copy(order='F')
-    if tri.dtype != np.float64:
-        tri = tri.astype(np.float64)
+    if tri.dtype != np.int32:
+        tri = tri.astype(np.int32)
     if not texture_tri.flags.f_contiguous:
         texture_tri = texture_tri.copy(order='F')
     if not img_src.flags.f_contiguous:

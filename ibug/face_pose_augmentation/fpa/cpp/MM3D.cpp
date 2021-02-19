@@ -3,8 +3,8 @@
 
 using namespace std;
 
-void MM3D::ZBuffer(double* vertex, double* tri, double* texture, int nver, int ntri,
-    double* src_img, int width, int height, int nChannels, double* img, double* tri_ind)
+void MM3D::ZBuffer(double* vertex, int* tri, double* texture, int nver, int ntri,
+    double* src_img, int width, int height, int nChannels, double* img, int* tri_ind)
 {
 	double* imgh = new double[width * height];
 
@@ -22,9 +22,9 @@ void MM3D::ZBuffer(double* vertex, double* tri, double* texture, int nver, int n
 
 	for(int i = 0; i < ntri; i++)
 	{
-		int p1 = int(tri[3 * i]);
-		int p2 = int(tri[3 * i + 1]);
-		int p3 = int(tri[3 * i + 2]);
+		int p1 = tri[3 * i];
+		int p2 = tri[3 * i + 1];
+		int p3 = tri[3 * i + 2];
 
 		double *pt1 = vertex + 3 * p1;
 		double *pt2 = vertex + 3 * p2;
@@ -77,8 +77,8 @@ void MM3D::ZBuffer(double* vertex, double* tri, double* texture, int nver, int n
 	delete[] imgh;
 }
 
-void MM3D::ZBufferTri(double* vertex, double* tri, double* texture_tri, int nver, int ntri,
-    double* src_img, int width, int height, int nChannels, double* img, double* tri_ind)
+void MM3D::ZBufferTri(double* vertex, int* tri, double* texture_tri, int nver, int ntri,
+    double* src_img, int width, int height, int nChannels, double* img, int* tri_ind)
 {
 	double* imgh = new double[width * height];
 	double* tritex = texture_tri;
@@ -97,9 +97,9 @@ void MM3D::ZBufferTri(double* vertex, double* tri, double* texture_tri, int nver
 
 	for(int i = 0; i < ntri; i++)
 	{
-		double *pt1 = vertex + 3 * int(tri[3 * i]);
-		double *pt2 = vertex + 3 * int(tri[3 * i + 1]);
-		double *pt3 = vertex + 3 * int(tri[3 * i + 2]);
+		double *pt1 = vertex + 3 * tri[3 * i];
+		double *pt2 = vertex + 3 * tri[3 * i + 1];
+		double *pt3 = vertex + 3 * tri[3 * i + 2];
 
 		int x_min = (int)ceil(min(min(pt1[0], pt2[0]), pt3[0]));
 		int x_max = (int)floor(max(max(pt1[0], pt2[0]), pt3[0]));
