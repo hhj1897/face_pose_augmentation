@@ -4,47 +4,40 @@ import itertools
 import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
-from .pytUtils import make_rotation_matrix, ProjectShape, ImageMeshing, ImageRotation, \
+from .pytUtils import make_rotation_matrix, project_shape, ImageMeshing, ImageRotation, \
     FaceFrontalizationFilling, FaceFrontalizationMappingNosym, model_completion_bfm, \
     ZBufferTri, calc_barycentric_coordinates
-
-import time
 
 
 def generate_profile_faces(delta_poses, fit_result, image, face_models, return_corres_map=False,
                            further_adjust_z=False, landmarks=None, mouth_point_indices=range(48, 68)):
-    # 1. Load fitting result from 3DDFA
+    # 1. Get fitting result from 3DDFA (vertex is without affine transform and image space transform)
     roi_box = fit_result['roi_box']
-    # without affine transform and image space transform
     vertex = fit_result['vertex']
     fR, T = fit_result['camera_transform']['fR'], fit_result['camera_transform']['T']
     
     yaw, pitch, roll = [fit_result['face_pose'][key] for key in ['yaw', 'pitch', 'roll']]
     t3d, f = fit_result['face_pose']['t3d'], fit_result['face_pose']['f']
 
-    ss = time.time()
-    vertex_full, tri_full = model_completion_bfm(vertex, face_models['Model_FWH'],
-                                                 face_models['Model_Completion'], face_models['conn_point_info'])
-    vertexm_full, _ = model_completion_bfm(face_models['vertex_noear_BFM'], face_models['Model_FWH'],
-                                           face_models['Model_Completion'], face_models['conn_point_info'])
-    print(time.time() - ss)
+    vertex_full, tri_full = model_completion_bfm(
+        vertex, face_models['Model_FWH'], face_models['Model_Completion'], face_models['conn_point_info'])
 
     height, width = image.shape[:2]
     new_img = image.astype(np.float64, order='F') / 255.0
 
     # apply camera rotation to the 3D mesh    
-    ProjectVertex_full = ProjectShape(vertex_full, fR, T, roi_box)
-    ProjectVertexm_full = ProjectShape(vertexm_full, fR, T, roi_box)
+    projected_vertex_full = project_shape(vertex_full, fR, T, roi_box)
+    projected_vertexm_full = project_shape(face_models['vertexm_full'], fR, T, roi_box)
 
     # 2. Image Meshing
     contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = ImageMeshing(
-        vertex, face_models['tri_plus'], vertex_full, tri_full, vertexm_full, ProjectVertex_full, ProjectVertexm_full,
-        fR, T, roi_box, f, pitch, yaw, roll, t3d,
+        vertex, face_models['tri_plus'], vertex_full, tri_full, face_models['vertexm_full'],
+        projected_vertex_full, projected_vertexm_full, fR, T, roi_box, f, pitch, yaw, roll, t3d,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
         new_img, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
 
     bg_vertex_src = np.hstack(contlist_src)
-    all_vertex_src = np.hstack([bg_vertex_src, ProjectVertex_full])
+    all_vertex_src = np.hstack([bg_vertex_src, projected_vertex_full])
     all_tri = np.hstack([bg_tri, tri_full + bg_vertex_src.shape[1]])
     bg_tri_alt = bg_tri.copy()
     for idx, vt in enumerate(face_contour_ind):
@@ -114,7 +107,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
 
         t3d_ref = np.mean(fR.dot(vertex_full)+T, axis=1) - np.mean(f*R_ref.dot(vertex_full), axis=1)
-        RefVertex = ProjectShape(vertex_full, f*R_ref, t3d_ref[:, np.newaxis], roi_box)
+        RefVertex = project_shape(vertex_full, f*R_ref, t3d_ref[:, np.newaxis], roi_box)
 
         Pose_Para_src = np.array([pitch, yaw, roll]+list(t3d)+[f])
         Pose_Para_ref = np.array([pitch_ref, yaw_ref, roll_ref] + list(t3d_ref) + [f])

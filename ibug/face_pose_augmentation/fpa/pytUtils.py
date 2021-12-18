@@ -11,7 +11,8 @@ from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
 
 
-__all__ = ['make_rotation_matrix', 'precompute_conn_point', 'model_completion_bfm']
+__all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit_3d_shape', 'get_euler_angles',
+           'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -34,16 +35,77 @@ def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
 
 def make_rotation_matrix(pitch: float, yaw: float, roll: float, zyx_order: bool = True) -> np.ndarray:
     # Make rotation matrix by Euler angles
-    rx = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(pitch), -np.sin(pitch)], [0.0, np.sin(pitch), np.cos(pitch)]])
-    ry = np.array([[np.cos(yaw), 0.0, np.sin(yaw)], [0.0, 1.0, 0.0], [-np.sin(yaw), 0.0, np.cos(yaw)]])
-    rz = np.array([[np.cos(roll), -np.sin(roll), 0.0,], [np.sin(roll), np.cos(roll), 0.0], [0.0, 0.0, 1.0]])
+    rx = np.array([[1.0, 0.0, 0.0],
+                   [0.0, math.cos(pitch), -math.sin(pitch)],
+                   [0.0, math.sin(pitch), math.cos(pitch)]])
+    ry = np.array([[math.cos(yaw), 0.0, math.sin(yaw)],
+                   [0.0, 1.0, 0.0],
+                   [-math.sin(yaw), 0.0, math.cos(yaw)]])
+    rz = np.array([[math.cos(roll), -math.sin(roll), 0.0],
+                   [math.sin(roll), math.cos(roll), 0.0],
+                   [0.0, 0.0, 1.0]])
     if zyx_order:
         return rz @ ry @ rx
     else:
         return rx @ ry @ rz
 
 
-def fit_model_with_valid_points(pt3d, model, valid_ind):
+def align_points(p1: np.ndarray, p2: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
+    d, n = p1.shape
+
+    mu1 = np.mean(p1, axis=1)
+    mu2 = np.mean(p2, axis=1)
+
+    p1_0 = p1 - mu1[:, np.newaxis]
+    p2_0 = p2 - mu2[:, np.newaxis]
+    sigma1 = np.sum(p1_0 ** 2) / n
+
+    K = p2_0.dot(p1_0.T) / n
+
+    # Matlab's svd command returns U, S and V, but numpy.linalg.svd returns U, the diagonal of S, and V'
+    U, G, V = np.linalg.svd(K)
+    G = np.diag(G)
+
+    S = np.eye(d)
+    if np.linalg.det(K) < 0:
+        S[d - 1, d - 1] = -1
+
+    R = U.dot(S).dot(V)
+    c = np.trace(G.dot(S)) / sigma1
+    t = mu2 - c * R.dot(mu1)
+
+    return c, R, t
+
+
+def fit_3d_shape(pt3d: np.ndarray, f: float, R: np.ndarray, t: np.ndarray, mu: np.ndarray,
+                 w: np.ndarray, sigma: np.ndarray, beta: float) -> np.ndarray:
+    m = pt3d.shape[1]
+    t3d = t[:, np.newaxis]
+
+    s3d = f * R.dot(mu)
+    w3d = f * R.dot(w).reshape((3 * m, -1), order='F')
+
+    lhs = w3d.T.dot(w3d) + beta * np.diag(1.0 / (sigma ** 2))
+    rhs = w3d.T.dot((pt3d - s3d - t3d).ravel('F'))
+    alpha = np.linalg.lstsq(lhs, rhs, rcond=None)[0]
+
+    return alpha
+
+
+def get_euler_angles(R: np.ndarray) -> Tuple[float, float, float]:
+    theta1 = math.atan2(R[1, 2], R[2, 2])
+    c2 = (R[0, 0] ** 2 + R[0, 1] ** 2) ** 0.5
+    theta2 = math.atan2(-R[0, 2], c2)
+    s1 = math.sin(theta1)
+    c1 = math.cos(theta1)
+    theta3 = math.atan2(s1 * R[2, 0] - c1 * R[1, 0], c1 * R[1, 1] - s1 * R[2, 1])
+
+    phi, gamma, theta = -theta1, -theta2, -theta3
+    return phi, gamma, theta
+
+
+def fit_model_with_valid_points(pt3d: np.ndarray, model: Dict, valid_ind: np.ndarray) \
+        -> Tuple[float, float, float, float, np.ndarray, np.ndarray]:
     mu = model['mu']
     w = model['w']
     sigma = model['sigma']
@@ -65,21 +127,19 @@ def fit_model_with_valid_points(pt3d, model, valid_ind):
         # 1. Pose Estimate
         vertex_key = mu_key + w_key.dot(alpha)
         vertex_key = vertex_key.reshape((3, -1), order='F')
-
-        f, R, t = AlignPoints(vertex_key, pt3d)
+        f, R, t = align_points(vertex_key, pt3d)
 
         # 2.shape fitting
         beta = 3000
-        # alpha = FittingShape3D(pt3d, f, R, t, mu_key, w_key, sigma, beta)
-        alpha = FittingShape3D_v2(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
+        alpha = fit_3d_shape(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
 
-    phi, gamma, theta = RotationMatrix2Angle(R)
+    phi, gamma, theta = get_euler_angles(R)
 
     return f, phi, gamma, theta, t, alpha
 
 
-def model_completion_bfm(projected_vertex: np.ndarray, model_fullhead: Dict,
-                         model_completion: Dict, conn_point_info: Dict) -> Tuple[Dict, Dict]:
+def model_completion_bfm(projected_vertex: np.ndarray, model_fullhead: Dict, model_completion: Dict,
+                         conn_point_info: Dict) -> Tuple[np.ndarray, np.ndarray]:
     muf = model_fullhead['mu']
     wf = model_fullhead['w']
 
@@ -110,24 +170,27 @@ def model_completion_bfm(projected_vertex: np.ndarray, model_fullhead: Dict,
 
     return projected_vertex_full, tri_full
 
-##### hhj: Unorganised #####
 
-
-def ProjectShape(vertex, fR, T, roi_bbox, STD_SIZE=120):    
+def project_shape(vertex: np.ndarray, fR: np.ndarray, T: np.ndarray, roi_bbox: np.ndarray,
+                  std_size: int = 120) -> np.ndarray:
     # transform to image coordinate scale
     vertex = fR.dot(vertex) + T
-    vertex[1,:] = STD_SIZE + 1 - vertex[1,:]
-    
+    vertex[1, :] = std_size + 1 - vertex[1, :]
+
     sx, sy, ex, ey = roi_bbox
-    scale_x = (ex - sx) / STD_SIZE
-    scale_y = (ey - sy) / STD_SIZE
+    scale_x = (ex - sx) / std_size
+    scale_y = (ey - sy) / std_size
     vertex[0, :] = vertex[0, :] * scale_x + sx
     vertex[1, :] = vertex[1, :] * scale_y + sy
 
     s = (scale_x + scale_y) / 2
     vertex[2, :] *= s
-    
+
     return vertex
+
+
+##### hhj: Unorganised #####
+
 
 
 def ParaMap_Pose(para_Pose):
@@ -452,26 +515,6 @@ def AnchorAdjustment_Rotate(all_vertex_src, all_vertex_ref, all_vertex_adjust, t
     return all_vertex_adjust
 
 
-def ProjectShape(vertex, fR, T, roi_bbox):
-    # function in pytorch 3DDFA
-    STD_SIZE = 120
-    
-    # transform to image coordinate scale
-    vertex = fR.dot(vertex) + T
-    vertex[1,:] = STD_SIZE + 1 - vertex[1,:]
-    
-    sx, sy, ex, ey = roi_bbox
-    scale_x = (ex - sx) / STD_SIZE
-    scale_y = (ey - sy) / STD_SIZE
-    vertex[0, :] = vertex[0, :] * scale_x + sx
-    vertex[1, :] = vertex[1, :] * scale_y + sy
-
-    s = (scale_x + scale_y) / 2
-    vertex[2, :] *= s
-    
-    return vertex    
-
-
 def BackProjectShape(vertex, fR, T, roi_bbox): 
     STD_SIZE = 120
 
@@ -530,7 +573,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
         
         t3d_cur = (1-curlayer_width)*fR.dot(vertex[:,nosetip][:, np.newaxis]) + T
 
-        contour3d = ProjectShape(vertex_full[:,face_contour_ind], curlayer_width*fR, t3d_cur, roi_bbox)
+        contour3d = project_shape(vertex_full[:,face_contour_ind], curlayer_width*fR, t3d_cur, roi_bbox)
         
         contour = np.vstack([contour, contour3d[2,:]])
 
@@ -696,7 +739,7 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     all_vertex_ref = BackProjectShape(all_vertex, fR, T, roi_box)
     # Go to the reference position
     R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
-    all_vertex_ref = ProjectShape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
+    all_vertex_ref = project_shape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
     
     # 2. Landmark marching 
     if yaw_ref < 0:
@@ -858,111 +901,6 @@ def FaceFrontalizationFilling(img, corres_map):
     # corres_map = corres_map - 1
     result = pyFF.pyFaceFrontalizationFilling(img, width, height, nChannels, corres_map)
     return result
-
-
-def AlignPoints(p1, p2):
-    d, n = p1.shape
-
-    mu1 = np.mean(p1, axis=1)
-    mu2 = np.mean(p2, axis=1)
-
-    p1_0 = p1 - mu1[:,np.newaxis]
-    p2_0 = p2 - mu2[:,np.newaxis]
-    sigma1 = np.sum(p1_0**2) / n
-    #sigma2 = np.sum(p2_0**2) / n
-
-    K = p2_0.dot(p1_0.T) / n
-
-    # Matlab's svd command returns U, S and V, 
-    #  while numpy.linalg.svd returns U, the diagonal of S, and V^T
-    [U, G, V] = np.linalg.svd(K)    
-    G = np.diag(G)    
-    
-    S = np.eye(d)
-    if np.linalg.det(K) < 0:
-        S[d-1, d-1] = -1
-        
-    R = U.dot(S).dot(V)
-    c = np.trace(G.dot(S)) / sigma1
-    t = mu2 - c*R.dot(mu1)
-
-    return c, R, t
-
-
-def RotationMatrix2Angle(R):
-# % reference: Extracting Euler Angles from a Rotation Matrix, Mike Day
-# % if you are interested in this theme, please refer to 
-# % http://www.mathworks.com/matlabcentral/newsreader/view_thread/160945
-    theta1 = math.atan2(R[1,2], R[2,2])
-    c2 = np.sqrt(R[0,0]**2 + R[0,1]**2)
-    theta2 = math.atan2(-R[0,2], c2)
-    s1 = np.sin(theta1)
-    c1 = np.cos(theta1)
-    theta3 = math.atan2(s1*R[2,0] - c1*R[1,0], c1*R[1,1] - s1*R[2,1])
-
-    phi, gamma, theta = -theta1, -theta2, -theta3
-    return phi, gamma, theta
-
-
-def FittingShape3D(pt3d, f, R, t, mu, w, sigma, beta):
-    # % Initialize Shape with Keypoint
-    # % @input pt3d: Keypoint on the modal;
-    # % @input pt2d: Keypoint on the image
-    # % @input keypoints1: Keypoint index on the modal
-    # % @input R t s: Pose parameter
-    # % @input beta: Regularization parameter;
-    # % @input sigma: Shape's PCA parameter sigma
-    # % @output alpha: Shape's PCA paramter
-    m = pt3d.shape[1]
-    n = w.shape[1]
-    t3d = t[:,np.newaxis]
-    # t3d = repmat(t3d, 1, size(pt3d,2));
-
-    s3d = mu.reshape((3,-1), order='F')
-    s3d = f*R.dot(s3d)
-    
-    w3d = np.zeros((3*m, n))    
-    for i in range(n):        
-        tempdata = w[:,i].reshape((3,-1), order='F')
-        tempdata3d = f*R.dot(tempdata) 
-        w3d[:,i] = tempdata3d.ravel('F')
-
-    # % optimize the equation
-    # % fit 3D morphable model
-    # % optimize ||x - T(w * alpha + mu)|| + lambda * alpha' * C * alpha
-    # % (w'T'Tw + lambda*C) * alpha = w'T'x - w'T'T*mu, w2d = wT 
-    equationLeft = w3d.T.dot(w3d) + beta*np.diag(1.0/(sigma**2))    
-    equationRight = w3d.T.dot((pt3d-s3d-t3d).ravel('F'))
-    alpha = np.linalg.lstsq(equationLeft, equationRight, rcond=None)[0]
-
-    return alpha
-
-
-def FittingShape3D_v2(pt3d, f, R, t, mu, w, sigma, beta):
-    # % Initialize Shape with Keypoint
-    # % @input pt3d: Keypoint on the modal;
-    # % @input pt2d: Keypoint on the image
-    # % @input keypoints1: Keypoint index on the modal
-    # % @input R t s: Pose parameter
-    # % @input beta: Regularization parameter;
-    # % @input sigma: Shape's PCA parameter sigma
-    # % @output alpha: Shape's PCA paramter
-    m = pt3d.shape[1]    
-    t3d = t[:,np.newaxis]
-
-    # note that mu is (3, n_points), w is (3,n_point*num_components). 
-    s3d = f*R.dot(mu)    
-    w3d = f*R.dot(w).reshape((3*m,-1), order='F')     
-    
-    # % optimize the equation
-    # % fit 3D morphable model
-    # % optimize ||x - T(w * alpha + mu)|| + lambda * alpha' * C * alpha
-    # % (w'T'Tw + lambda*C) * alpha = w'T'x - w'T'T*mu, w2d = wT 
-    equationLeft = w3d.T.dot(w3d) + beta*np.diag(1.0/(sigma**2))    
-    equationRight = w3d.T.dot((pt3d-s3d-t3d).ravel('F'))
-    alpha = np.linalg.lstsq(equationLeft, equationRight, rcond=None)[0]
-
-    return alpha
 
 
 def calc_barycentric_coordinates(pt, vertices, tri_list):

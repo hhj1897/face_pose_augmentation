@@ -5,7 +5,7 @@ from scipy.io import loadmat
 from scipy.interpolate import interp1d
 from typing import Optional, Dict, Any, Union, List
 from .fpa import __file__ as fpa_init_file
-from .fpa.pytUtils import precompute_conn_point
+from .fpa.pytUtils import precompute_conn_point, model_completion_bfm
 from .fpa import generate_profile_faces, retrieve_contour_landmark_aug
 
 
@@ -26,7 +26,6 @@ class FacePoseAugmentor(object):
             'mu': np.squeeze(m_fwh['Model_FWH']['mu'][0, 0]),
             'w': np.squeeze(m_fwh['Model_FWH']['w'][0, 0]),
             'sigma': np.squeeze(m_fwh['Model_FWH']['sigma'][0, 0])}
-        fpa_models['vertex_noear_BFM'] = m_fwh['vertex_noear_BFM']
 
         m_model_completion = loadmat(os.path.join(model_folder, 'Model_Completion.mat'))
         fpa_models['Model_Completion'] = {
@@ -54,6 +53,10 @@ class FacePoseAugmentor(object):
                                               m_fullmod_contour['parallelfull_contour']]
 
         fpa_models['conn_point_info'] = precompute_conn_point(fpa_models['tri_plus'], fpa_models['Model_Completion'])
+
+        fpa_models['vertexm_full'], _ = model_completion_bfm(
+            m_fwh['vertex_noear_BFM'], fpa_models['Model_FWH'],
+            fpa_models['Model_Completion'], fpa_models['conn_point_info'])
 
         # create new keypoint index and its corresponding contours
         n_points = np.max(fpa_models['tri']) + 1

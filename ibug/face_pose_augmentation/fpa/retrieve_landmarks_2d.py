@@ -1,6 +1,6 @@
 import numpy as np
 from copy import deepcopy
-from .pytUtils import make_rotation_matrix, ProjectShape
+from .pytUtils import make_rotation_matrix, project_shape
 
 
 def landmark_marching(pitch, yaw, roll, vertex, isoline, keypoints):  
@@ -41,7 +41,7 @@ def retrieve_contour_landmark(fit_result, face_models):
     new_keypoints_contour = landmark_marching(pitch, yaw, roll, vertex,
                                               face_models['parallel_contour'],
                                               face_models['keypoints_contour'])
-    vertex_projected = ProjectShape(vertex, fR, T, roi_box)
+    vertex_projected = project_shape(vertex, fR, T, roi_box)
     # 3D-style landmarks
     landmarks_3d_style = vertex_projected[:2, face_models['keypoints_contour']].T
     # 2D-style landmarks
@@ -68,7 +68,7 @@ def retrieve_contour_landmark_aug(new_result, old_result, face_models):
     new_keypoints_contour = landmark_marching(new_pitch, new_yaw, new_roll, vertex, 
                                               face_models['parallel_contour'], face_models['keypoints_contour'])
     
-    vertex_projected = ProjectShape(vertex, new_fR, new_t3d[:, np.newaxis], roi_box)  
+    vertex_projected = project_shape(vertex, new_fR, new_t3d[:, np.newaxis], roi_box)
     # 3D-style landmarks
     landmarks_3d_style = vertex_projected[:2, face_models['keypoints_contour']].T  
     # 2D-style landmarks
