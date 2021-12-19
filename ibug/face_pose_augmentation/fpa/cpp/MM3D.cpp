@@ -15,10 +15,7 @@ void MM3D::ZBuffer(double* vertex, int* tri, double* texture, int nver, int ntri
 	}
 
 	//init image
-	for(int i = 0; i < width * height * nChannels; i++)
-	{
-		img[i] = src_img[i];
-	}
+	memcpy(img, src_img, width * height * nChannels * sizeof(double));
 
 	for(int i = 0; i < ntri; i++)
 	{
@@ -60,14 +57,14 @@ void MM3D::ZBuffer(double* vertex, int* tri, double* texture, int nver, int ntri
 					double l2 = ((pt3[1] - pt1[1]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[1])) / det;
 					double l3 = 1.0 - l1 - l2;
 					double z = l1 * pt1[2] + l2 * pt2[2] + l3 * pt3[2];
-					if( imgh[x * height + y] < z )
+					if(imgh[y * width + x] < z)
 					{
-						imgh[x * height + y] = z;
+						imgh[y * width + x] = z;
 						for(int j = 0; j < nChannels; j++)
 						{
-							img[j * width * height + x * height + y] =  l1 * t1[j] + l2 * t2[j] + l3 * t3[j];
+						    img[(y * width + x) * nChannels + j] =  l1 * t1[j] + l2 * t2[j] + l3 * t3[j];
 						}
-						tri_ind[x * height + y] = i;
+						tri_ind[y * width + x] = i;
 					}
 				}
 			}
@@ -81,7 +78,6 @@ void MM3D::ZBufferTri(double* vertex, int* tri, double* texture_tri, int nver, i
     double* src_img, int width, int height, int nChannels, double* img, int* tri_ind)
 {
 	double* imgh = new double[width * height];
-	double* tritex = texture_tri;
 
 	for(int i = 0; i < width * height; i++)
 	{
@@ -90,10 +86,7 @@ void MM3D::ZBufferTri(double* vertex, int* tri, double* texture_tri, int nver, i
 	}
 
 	//init image
-	for(int i = 0; i < width * height * nChannels; i++)
-	{
-		img[i] = src_img[i];
-	}
+	memcpy(img, src_img, width * height * nChannels * sizeof(double));
 
 	for(int i = 0; i < ntri; i++)
 	{
@@ -127,14 +120,14 @@ void MM3D::ZBufferTri(double* vertex, int* tri, double* texture_tri, int nver, i
 					double l2 = ((pt3[1] - pt1[1]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[1])) / det;
 					double l3 = 1.0 - l1 - l2;
 					double z = l1 * pt1[2] + l2 * pt2[2] + l3 * pt3[2];
-					if( imgh[x * height + y] < z )
+					if(imgh[y * width + x] < z)
 					{
-						imgh[x * height + y] = z;
+						imgh[y * width + x] = z;
 						for(int j = 0; j < nChannels; j++)
 						{
-							img[j * width * height + x * height + y] =  tritex[nChannels * i + j];
+						    img[(y * width + x) * nChannels + j] =  texture_tri[nChannels * i + j];
 						}
-						tri_ind[x * height + y] = i;
+						tri_ind[y * width + x] = i;
 					}
 				}
 			}

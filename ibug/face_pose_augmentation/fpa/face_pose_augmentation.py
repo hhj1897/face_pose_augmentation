@@ -6,7 +6,10 @@ from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
 from .pytUtils import make_rotation_matrix, project_shape, ImageMeshing, ImageRotation, \
     FaceFrontalizationFilling, FaceFrontalizationMappingNosym, model_completion_bfm, \
-    ZBufferTri, calc_barycentric_coordinates
+    z_buffer_tri, calc_barycentric_coordinates
+
+
+__all__ = ['generate_profile_faces', 'generate_profile_face']
 
 
 def generate_profile_faces(delta_poses, fit_result, image, face_models, return_corres_map=False,
@@ -150,8 +153,9 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
             all_vertex_ref[2, zmax_ind] = all_vertex_ref[2].max()
 
         # 4. Get Correspondence
-        valid_half = np.zeros((tri_full.shape[1],1))
-        _, tri_ind = ZBufferTri(all_vertex_ref, all_tri, np.zeros((1,all_tri.shape[1])), -np.ones((height, width, 1)))
+        valid_half = np.zeros((tri_full.shape[1], 1))
+        _, tri_ind = z_buffer_tri(all_vertex_ref, all_tri, np.zeros((all_tri.shape[1], 1)),
+                                  -np.ones((height, width, 1)))
         corres_map = FaceFrontalizationMappingNosym(np.zeros(new_img.shape[:2], order='F'), tri_ind, all_vertex_src,
                                                     all_vertex_ref, all_tri, bg_tri_num, valid_half, vertex.shape[1],
                                                     face_models['tri_plus'].shape[1])

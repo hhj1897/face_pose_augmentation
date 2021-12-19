@@ -1,5 +1,5 @@
 import torch
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Sequence
 import numpy as np
 import math
 
@@ -12,7 +12,8 @@ from . import pyMM3D as pyMM
 
 
 __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit_3d_shape', 'get_euler_angles',
-           'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape']
+           'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
+           'z_buffer', 'z_buffer_tri', 'refine_contour_points']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -124,12 +125,12 @@ def fit_model_with_valid_points(pt3d: np.ndarray, model: Dict, valid_ind: np.nda
 
     iterations = 5
     for _ in range(iterations):
-        # 1. Pose Estimate
+        # 1. pose estimation
         vertex_key = mu_key + w_key.dot(alpha)
         vertex_key = vertex_key.reshape((3, -1), order='F')
         f, R, t = align_points(vertex_key, pt3d)
 
-        # 2.shape fitting
+        # 2. shape fitting
         beta = 3000
         alpha = fit_3d_shape(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
 
@@ -189,95 +190,55 @@ def project_shape(vertex: np.ndarray, fR: np.ndarray, T: np.ndarray, roi_bbox: n
     return vertex
 
 
-##### hhj: Unorganised #####
+def parse_pose_parameters(pose_params: np.ndarray) -> Tuple[float, float, float, np.ndarray, float]:
+    pose_params = np.squeeze(pose_params)
+    phi, gamma, theta = pose_params[:3]
+    t3d = pose_params[3:6]
+    f = pose_params[-1]
 
-
-
-def ParaMap_Pose(para_Pose):
-    para_Pose = np.squeeze(para_Pose)
-    phi, gamma, theta = para_Pose[:3]
-    t3d = para_Pose[3:6]
-    f = para_Pose[-1]
-    
     return phi, gamma, theta, t3d, f
 
 
-def ZBuffer(projectedVertex, tri, texture, img_src):
-    projectedVertex = projectedVertex - 1
-    # tri = tri - 1
-    height, width, nChannels = img_src.shape
-    nver = projectedVertex.shape[1]
+def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
+             img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    height, width, num_channels = img_src.shape
+    nver = projected_vertex.shape[1]
     ntri = tri.shape[1]
-    
-    # make sure they are F-contiguous
-    if not projectedVertex.flags.f_contiguous:
-        projectedVertex = projectedVertex.copy(order='F')
-    if not tri.flags.f_contiguous:
-        tri = tri.copy(order='F')
-    if tri.dtype != np.int32:
-        tri = tri.astype(np.int32)
-    if not texture.flags.f_contiguous:
-        texture = texture.copy(order='F')
-    if not img_src.flags.f_contiguous:
-        img_src = img_src.copy(order='F')
-    
-    img, tri_ind = pyMM.ZBuffer(projectedVertex, tri, texture, img_src, nver, ntri, width, height, nChannels)
-    # tri_ind = tri_ind + 1
+
+    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).transpose()),
+                                np.ascontiguousarray(tri.transpose()),
+                                np.ascontiguousarray(texture),
+                                np.ascontiguousarray(img_src),
+                                nver, ntri, width, height, num_channels)
     
     return np.squeeze(img), np.squeeze(tri_ind)
 
 
-def ZBufferTri(projectedVertex, tri, texture_tri, img_src):
-    projectedVertex = projectedVertex - 1
-    # tri = tri - 1
-    height, width, nChannels = img_src.shape
-    nver = projectedVertex.shape[1]
+def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.ndarray,
+                 img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    height, width, num_channels = img_src.shape
+    nver = projected_vertex.shape[1]
     ntri = tri.shape[1]
     
-    # make sure they are F-contiguous
-    if not projectedVertex.flags.f_contiguous:
-        projectedVertex = projectedVertex.copy(order='F')
-    if not tri.flags.f_contiguous:
-        tri = tri.copy(order='F')
-    if tri.dtype != np.int32:
-        tri = tri.astype(np.int32)
-    if not texture_tri.flags.f_contiguous:
-        texture_tri = texture_tri.copy(order='F')
-    if not img_src.flags.f_contiguous:
-        img_src = img_src.copy(order='F')
-    
-    img, tri_ind = pyMM.ZBufferTri(projectedVertex, tri, texture_tri, img_src, nver, ntri, width, height, nChannels)
-    # tri_ind = tri_ind + 1
+    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).transpose()),
+                                   np.ascontiguousarray(tri.transpose()),
+                                   np.ascontiguousarray(texture_tri),
+                                   np.ascontiguousarray(img_src),
+                                   nver, ntri, width, height, num_channels)
     
     return np.squeeze(img), np.squeeze(tri_ind)
 
 
-def KeypointsWithPose(pitch, yaw, roll, vertex, tri, isoline, keypoints, modify_ind, candidates=None):    
-    ProjectVertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
-    ProjectVertex = ProjectVertex - np.min(ProjectVertex, axis=1)[:, np.newaxis] + 1
-    ProjectVertex /= np.max(np.abs(ProjectVertex))
-    
-    keypoints_pose = deepcopy(keypoints)
-    # 1. get the keypoints needing modifying
-    modify_key = deepcopy(modify_ind)
-    # 2. get the contour line of each modify key
-    contour_line = [isoline[i] for i in modify_key]
+def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines: Sequence[np.ndarray],
+                          contour_points: np.ndarray, contour_points_to_refine: Sequence[int]) -> np.ndarray:
+    projected_vertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
+    contour_points = deepcopy(contour_points)
+    for idx in contour_points_to_refine:
+        selected = (np.argmin(projected_vertex[0, isolines[idx]]) if yaw <= 0
+                    else np.argmax(projected_vertex[0, isolines[idx]]))
+        contour_points[idx] = isolines[idx][selected]
 
-    if candidates is not None:
-        candidates = candidates[modify_key]
-        for i in range(len(modify_key)):
-            if len(candidates[i]) > 0:
-                contour_line[i] = sorted(list(set(contour_line[i]).intersection(set(candidates[i]))))
-    # 3. get the outest point on the contour line
-    for i in range(len(modify_key)):
-        if yaw <= 0:
-            min_ind = np.argmin(ProjectVertex[0, contour_line[i]])
-            keypoints_pose[modify_key[i]] = contour_line[i][min_ind]
-        else:
-            max_ind = np.argmax(ProjectVertex[0, contour_line[i]])          
-            keypoints_pose[modify_key[i]] = contour_line[i][max_ind]
-
-    return keypoints_pose            
+    return contour_points
 
 
 def imgContourBbox(bbox, wpnum):    
@@ -548,12 +509,11 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
 
     # 1. Get the necessary face_contour
     if yaw < 0:
-        face_contour_modify = np.array(list(range(8)) + list(range(24,30)))
+        face_contour_modify = list(range(8)) + list(range(24, 30))
     else:
-        face_contour_modify = np.array(range(9,23))
-
-    face_contour_ind = KeypointsWithPose(pitch, yaw, roll, vertex_full, tri_full,
-                                         parallelfull_contour, keypointsfull_contour, face_contour_modify)
+        face_contour_modify = list(range(9, 23))
+    face_contour_ind = refine_contour_points(pitch, yaw, vertex_full, parallelfull_contour,
+                                             keypointsfull_contour, face_contour_modify)
     face_contour = ProjectVertex_full[:, face_contour_ind]
 
     contlist[0] = face_contour
@@ -674,8 +634,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     contour_all = np.hstack(contlist)
 
     # Finally refine the anchor depth with real depth
-    depth_ref, tri_ind = ZBuffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2,:][np.newaxis,:],
-                                 np.zeros((height, width, 1)))
+    depth_ref, tri_ind = z_buffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2, :][:, np.newaxis],
+                                  np.zeros((height, width, 1)))
     # # test draw
     # im1 = Image.fromarray(( 255*(depth_ref-np.min(depth_ref))/(np.max(depth_ref)-np.min(depth_ref)) ).astype('uint8'))
     # im2 = Image.fromarray((255*tri_ind/np.max(tri_ind)).astype('uint8'))    
@@ -729,8 +689,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
 def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
                   isoline_face_contour, Pose_Para_src, Pose_Para_ref, img, 
                   ProjectVertex_ref, fR, T, roi_box):
-    _, yaw, _, _, f = ParaMap_Pose(Pose_Para_src)
-    pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = ParaMap_Pose(Pose_Para_ref)
+    _, yaw, _, _, f = parse_pose_parameters(Pose_Para_src)
+    pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = parse_pose_parameters(Pose_Para_ref)
 
     all_vertex = np.hstack(contlist_src)
     all_vertex_src = deepcopy(all_vertex)
@@ -743,19 +703,19 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     
     # 2. Landmark marching 
     if yaw_ref < 0:
-        face_contour_modify = np.array(list(range(8)) + list(range(24,30)))
+        face_contour_modify = list(range(8)) + list(range(24, 30))
     else:
-        face_contour_modify = np.array(range(9,23))
+        face_contour_modify = list(range(9, 23))
 
     adjust_ind = list(range(3, 14)) + list(range(18, 30))
     yaw_base = min(yaw, 0) if yaw_ref < 0 else max(0, yaw)
     yaw_delta = yaw_ref - yaw_base
     yaw_temp = yaw_base + yaw_delta / 2.5
 
-    face_contour_ind = KeypointsWithPose(pitch_ref, yaw_temp, roll_ref, vertex, tri,
-                                         isoline_face_contour, face_contour_ind, face_contour_modify)
-    face_contour_ind2 = KeypointsWithPose(pitch_ref, yaw_base, roll_ref, vertex, tri,
-                                          isoline_face_contour, face_contour_ind, face_contour_modify)
+    face_contour_ind = refine_contour_points(pitch_ref, yaw_temp, vertex, isoline_face_contour,
+                                             face_contour_ind, face_contour_modify)
+    face_contour_ind2 = refine_contour_points(pitch_ref, yaw_base, vertex, isoline_face_contour,
+                                              face_contour_ind, face_contour_modify)
     face_contour_ind[adjust_ind] = face_contour_ind2[adjust_ind]
     face_contour_ref = ProjectVertex_ref[:, face_contour_ind]
     all_vertex_adjust = np.zeros(all_vertex_ref.shape)
