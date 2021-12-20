@@ -13,7 +13,8 @@ from . import pyMM3D as pyMM
 
 __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit_3d_shape', 'get_euler_angles',
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
-           'z_buffer', 'z_buffer_tri', 'refine_contour_points']
+           'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
+           'get_valid_internal_triangles', 'back_project_shape']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -61,30 +62,30 @@ def align_points(p1: np.ndarray, p2: np.ndarray) -> Tuple[float, np.ndarray, np.
     p2_0 = p2 - mu2[:, np.newaxis]
     sigma1 = np.sum(p1_0 ** 2) / n
 
-    K = p2_0.dot(p1_0.T) / n
+    k_mat = p2_0.dot(p1_0.T) / n
 
     # Matlab's svd command returns U, S and V, but numpy.linalg.svd returns U, the diagonal of S, and V'
-    U, G, V = np.linalg.svd(K)
-    G = np.diag(G)
+    u_mat, g_mat, v_mat = np.linalg.svd(k_mat)
+    g_mat = np.diag(g_mat)
 
-    S = np.eye(d)
-    if np.linalg.det(K) < 0:
-        S[d - 1, d - 1] = -1
+    s_mat = np.eye(d)
+    if np.linalg.det(k_mat) < 0:
+        s_mat[d - 1, d - 1] = -1
 
-    R = U.dot(S).dot(V)
-    c = np.trace(G.dot(S)) / sigma1
-    t = mu2 - c * R.dot(mu1)
+    rot_mat = u_mat.dot(s_mat).dot(v_mat)
+    c = np.trace(g_mat.dot(s_mat)) / sigma1
+    t = mu2 - c * rot_mat.dot(mu1)
 
-    return c, R, t
+    return c, rot_mat, t
 
 
-def fit_3d_shape(pt3d: np.ndarray, f: float, R: np.ndarray, t: np.ndarray, mu: np.ndarray,
+def fit_3d_shape(pt3d: np.ndarray, f: float, rot_mat: np.ndarray, t: np.ndarray, mu: np.ndarray,
                  w: np.ndarray, sigma: np.ndarray, beta: float) -> np.ndarray:
     m = pt3d.shape[1]
     t3d = t[:, np.newaxis]
 
-    s3d = f * R.dot(mu)
-    w3d = f * R.dot(w).reshape((3 * m, -1), order='F')
+    s3d = f * rot_mat.dot(mu)
+    w3d = f * rot_mat.dot(w).reshape((3 * m, -1), order='F')
 
     lhs = w3d.T.dot(w3d) + beta * np.diag(1.0 / (sigma ** 2))
     rhs = w3d.T.dot((pt3d - s3d - t3d).ravel('F'))
@@ -93,13 +94,13 @@ def fit_3d_shape(pt3d: np.ndarray, f: float, R: np.ndarray, t: np.ndarray, mu: n
     return alpha
 
 
-def get_euler_angles(R: np.ndarray) -> Tuple[float, float, float]:
-    theta1 = math.atan2(R[1, 2], R[2, 2])
-    c2 = (R[0, 0] ** 2 + R[0, 1] ** 2) ** 0.5
-    theta2 = math.atan2(-R[0, 2], c2)
+def get_euler_angles(rot_mat: np.ndarray) -> Tuple[float, float, float]:
+    theta1 = math.atan2(rot_mat[1, 2], rot_mat[2, 2])
+    c2 = (rot_mat[0, 0] ** 2 + rot_mat[0, 1] ** 2) ** 0.5
+    theta2 = math.atan2(-rot_mat[0, 2], c2)
     s1 = math.sin(theta1)
     c1 = math.cos(theta1)
-    theta3 = math.atan2(s1 * R[2, 0] - c1 * R[1, 0], c1 * R[1, 1] - s1 * R[2, 1])
+    theta3 = math.atan2(s1 * rot_mat[2, 0] - c1 * rot_mat[1, 0], c1 * rot_mat[1, 1] - s1 * rot_mat[2, 1])
 
     phi, gamma, theta = -theta1, -theta2, -theta3
     return phi, gamma, theta
@@ -115,7 +116,7 @@ def fit_model_with_valid_points(pt3d: np.ndarray, model: Dict, valid_ind: np.nda
     keypoints1 = keypoints1.ravel('F')
 
     alpha = np.zeros(w.shape[1])
-    f, R, t = 1, np.eye(3), np.zeros(3)
+    f, rot_mat, t = 1, np.eye(3), np.zeros(3)
 
     mu_key = mu[keypoints1]
     mu_key_rs = mu_key.reshape((3, -1), order='F')
@@ -128,13 +129,13 @@ def fit_model_with_valid_points(pt3d: np.ndarray, model: Dict, valid_ind: np.nda
         # 1. pose estimation
         vertex_key = mu_key + w_key.dot(alpha)
         vertex_key = vertex_key.reshape((3, -1), order='F')
-        f, R, t = align_points(vertex_key, pt3d)
+        f, rot_mat, t = align_points(vertex_key, pt3d)
 
         # 2. shape fitting
         beta = 3000
-        alpha = fit_3d_shape(pt3d, f, R, t, mu_key_rs, w_key_rs, sigma, beta)
+        alpha = fit_3d_shape(pt3d, f, rot_mat, t, mu_key_rs, w_key_rs, sigma, beta)
 
-    phi, gamma, theta = get_euler_angles(R)
+    phi, gamma, theta = get_euler_angles(rot_mat)
 
     return f, phi, gamma, theta, t, alpha
 
@@ -172,10 +173,10 @@ def model_completion_bfm(projected_vertex: np.ndarray, model_fullhead: Dict, mod
     return projected_vertex_full, tri_full
 
 
-def project_shape(vertex: np.ndarray, fR: np.ndarray, T: np.ndarray, roi_bbox: np.ndarray,
+def project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray,
                   std_size: int = 120) -> np.ndarray:
     # transform to image coordinate scale
-    vertex = fR.dot(vertex) + T
+    vertex = f_rot.dot(vertex) + tr
     vertex[1, :] = std_size + 1 - vertex[1, :]
 
     sx, sy, ex, ey = roi_bbox
@@ -202,14 +203,12 @@ def parse_pose_parameters(pose_params: np.ndarray) -> Tuple[float, float, float,
 def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
              img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     height, width, num_channels = img_src.shape
-    nver = projected_vertex.shape[1]
-    ntri = tri.shape[1]
+    num_vertices = projected_vertex.shape[1]
+    num_triangles = tri.shape[1]
 
-    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).transpose()),
-                                np.ascontiguousarray(tri.transpose()),
-                                np.ascontiguousarray(texture),
-                                np.ascontiguousarray(img_src),
-                                nver, ntri, width, height, num_channels)
+    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).T), np.ascontiguousarray(tri.T),
+                                np.ascontiguousarray(texture), np.ascontiguousarray(img_src),
+                                num_triangles, num_vertices, width, height, num_channels)
     
     return np.squeeze(img), np.squeeze(tri_ind)
 
@@ -217,14 +216,12 @@ def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
 def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.ndarray,
                  img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     height, width, num_channels = img_src.shape
-    nver = projected_vertex.shape[1]
-    ntri = tri.shape[1]
+    num_vertices = projected_vertex.shape[1]
+    num_triangles = tri.shape[1]
     
-    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).transpose()),
-                                   np.ascontiguousarray(tri.transpose()),
-                                   np.ascontiguousarray(texture_tri),
-                                   np.ascontiguousarray(img_src),
-                                   nver, ntri, width, height, num_channels)
+    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).T), np.ascontiguousarray(tri.T),
+                                   np.ascontiguousarray(texture_tri), np.ascontiguousarray(img_src),
+                                   num_vertices, num_triangles, width, height, num_channels)
     
     return np.squeeze(img), np.squeeze(tri_ind)
 
@@ -241,67 +238,72 @@ def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines
     return contour_points
 
 
-def imgContourBbox(bbox, wpnum):    
+def image_bbox_to_contour(bbox: np.ndarray, wpnum: float) -> Tuple[np.ndarray, int, int]:
     wp_num = wpnum - 2
     
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]    
 
-    hp_num = round(height / width * (wp_num+2)) - 2
-    w_inter = (width-1) / (wp_num+1)
-    h_inter = (height-1) / (hp_num+1)
-    # up edge
-    start_point = bbox[[0,1], np.newaxis]
-    interval = np.array([w_inter,0])[:, np.newaxis]
-    img_contour = start_point + np.arange(0,1+wp_num)*interval
+    hp_num = round(height / width * (wp_num + 2)) - 2
+    w_inter = (width - 1) / (wp_num + 1)
+    h_inter = (height - 1) / (hp_num + 1)
+
+    # top edge
+    start_point = bbox[[0, 1], np.newaxis]
+    interval = np.array([w_inter, 0])[:, np.newaxis]
+    img_contour = start_point + np.arange(0, 1+wp_num)*interval
+
     # right edge
-    start_point = bbox[[2,1], np.newaxis]
-    interval = np.array([0,h_inter])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0,1+hp_num)*interval])
-    # down edge
-    start_point = bbox[[2,3], np.newaxis]
-    interval = np.array([-w_inter,0])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0,1+wp_num)*interval])
+    start_point = bbox[[2, 1], np.newaxis]
+    interval = np.array([0, h_inter])[:, np.newaxis]
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+hp_num)*interval])
+
+    # bottom edge
+    start_point = bbox[[2, 3], np.newaxis]
+    interval = np.array([-w_inter, 0])[:, np.newaxis]
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+wp_num)*interval])
+
     # left edge
-    start_point = bbox[[0,3], np.newaxis]
-    interval = np.array([0,-h_inter])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0,1+hp_num)*interval])
+    start_point = bbox[[0, 3], np.newaxis]
+    interval = np.array([0, -h_inter])[:, np.newaxis]
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+hp_num)*interval])
 
     return img_contour, int(wp_num), int(hp_num)
 
 
-def EliminateInternalTri(cont_ver, tri):    
+def get_valid_internal_triangles(cont_ver: np.ndarray, tri: np.ndarray) -> np.ndarray:
     valid_bin = np.zeros(tri.shape[1], dtype=np.bool)
 
     for i in range(cont_ver.shape[1]):
         # for each contour point, find its related tri
         tmp_bin = np.any(tri == i, axis=0)
-        conn_tri_ind = np.where(tmp_bin == True)[0]
+        conn_tri_ind = np.where(tmp_bin)[0]
         conn_tri = tri[:, tmp_bin]
         angle_list = []
 
         for j in range(conn_tri.shape[1]):
             # for each connected tri, find the angle centered at i         
-            other_point = sorted(list(set(conn_tri[:,j]).difference(set([i]))))
+            other_point = [x for x in conn_tri[:, j] if x != i]
 
             line1 = cont_ver[:2, [i, other_point[0]]]
-            line1 = line1[:,1] - line1[:,0]
+            line1 = line1[:, 1] - line1[:, 0]
 
             line2 = cont_ver[:2, [i, other_point[1]]]
-            line2 = line2[:,1] - line2[:,0]
+            line2 = line2[:, 1] - line2[:, 0]
 
             angle_cos = line1.dot(line2) / np.sqrt(line1.dot(line1)) / np.sqrt(line2.dot(line2))
             angle = np.arccos(angle_cos)
             angle_list.append(angle)        
 
-        if(sum(angle_list) > (350 / 180 * np.pi)):
+        if sum(angle_list) > (350 / 180 * np.pi):
             # if the sum of angles around the vertex i is 360, it is a concave point
             for j in range(conn_tri.shape[1]):
                 # for each connected tri, find the angle centered at i            
-                other_point = sorted(list(set(conn_tri[:,j]).difference(set([i]))))            
+                other_point = [x for x in conn_tri[:, j] if x != i]
+
                 # if edge connecting point i is the contour edge, it is a valid triangle
-                bin1 = abs(i-other_point[0]) in [1, cont_ver.shape[1]-1]
-                bin2 = abs(i-other_point[1]) in [1, cont_ver.shape[1]-1]
+                bin1 = abs(i - other_point[0]) in [1, cont_ver.shape[1] - 1]
+                bin2 = abs(i - other_point[1]) in [1, cont_ver.shape[1] - 1]
                 if np.all([bin1, bin2]):
                     valid_bin[conn_tri_ind[j]] = True
 
@@ -476,21 +478,20 @@ def AnchorAdjustment_Rotate(all_vertex_src, all_vertex_ref, all_vertex_adjust, t
     return all_vertex_adjust
 
 
-def BackProjectShape(vertex, fR, T, roi_bbox): 
-    STD_SIZE = 120
-
+def back_project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray,
+                       std_size: int = 120) -> np.ndarray:
     sx, sy, ex, ey = roi_bbox
-    scale_x = (ex - sx) / STD_SIZE
-    scale_y = (ey - sy) / STD_SIZE
+    scale_x = (ex - sx) / std_size
+    scale_y = (ey - sy) / std_size
     s = (scale_x + scale_y) / 2
 
     vertex[2, :] /= s
     vertex[0, :] = (vertex[0, :] - sx)/scale_x
     vertex[1, :] = (vertex[1, :] - sy)/scale_y  
 
-    vertex[1,:] = STD_SIZE + 1 - vertex[1,:]  
+    vertex[1, :] = std_size + 1 - vertex[1, :]
 
-    vertex = np.linalg.inv(fR).dot((vertex - T))
+    vertex = np.linalg.inv(f_rot).dot((vertex - tr))
     
     return vertex
 
@@ -504,8 +505,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     height, width = img.shape[:2]
     layer = len(layer_width)    
     
-    contlist = [[] for _ in range(layer+2)]
-    bboxlist = [[] for _ in range(layer+2)]
+    contlist = [np.empty(shape=(3, 0)) for _ in range(layer+2)]
+    bboxlist = [np.empty(shape=(0,)) for _ in range(layer+2)]
 
     # 1. Get the necessary face_contour
     if yaw < 0:
@@ -555,7 +556,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     bboxlist[layer+1] = bbox
     wp_num1 = round(wp_num / (bbox1[2]-bbox1[0]) * (bbox[2]-bbox[0]))
 
-    img_contour, wp_num, hp_num = imgContourBbox(bbox, wp_num1)
+    img_contour, wp_num, hp_num = image_bbox_to_contour(bbox, wp_num1)
     contlist[layer+1] = np.vstack([img_contour, np.zeros((1,img_contour.shape[1]))])    
 
     # Triangulation
@@ -567,7 +568,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
         inbin = np.all(tri_all<face_contour.shape[1], axis=0)
         tri_inner = tri_all[:, inbin]
         cont_inner = contlist[0]
-        valid_inner_tri = EliminateInternalTri(cont_inner, tri_inner)
+        valid_inner_tri = get_valid_internal_triangles(cont_inner, tri_inner)
         tri_inner = tri_all[:, inbin]
         tri_all = np.hstack([tri_all[:,~inbin], tri_inner[:,valid_inner_tri]])
 
@@ -696,7 +697,7 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     all_vertex_src = deepcopy(all_vertex)
 
     # 1. get the preliminary position on the ref frame    
-    all_vertex_ref = BackProjectShape(all_vertex, fR, T, roi_box)
+    all_vertex_ref = back_project_shape(all_vertex, fR, T, roi_box)
     # Go to the reference position
     R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
     all_vertex_ref = project_shape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
