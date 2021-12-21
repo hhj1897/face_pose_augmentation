@@ -3,8 +3,8 @@
 
 using namespace std;
 
-void MM3D::ZBuffer(double* vertex, int* tri, double* texture, int nver, int ntri,
-    double* src_img, int width, int height, int nChannels, double* img, int* tri_ind)
+void MM3D::ZBuffer(double* vertex, long* tri, double* texture, int nver, int ntri,
+    double* src_img, int width, int height, int nChannels, double* img, long* tri_ind)
 {
 	double* imgh = new double[width * height];
 
@@ -74,8 +74,8 @@ void MM3D::ZBuffer(double* vertex, int* tri, double* texture, int nver, int ntri
 	delete[] imgh;
 }
 
-void MM3D::ZBufferTri(double* vertex, int* tri, double* texture_tri, int nver, int ntri,
-    double* src_img, int width, int height, int nChannels, double* img, int* tri_ind)
+void MM3D::ZBufferTri(double* vertex, long* tri, double* texture_tri, int nver, int ntri,
+    double* src_img, int width, int height, int nChannels, double* img, long* tri_ind)
 {
 	double* imgh = new double[width * height];
 

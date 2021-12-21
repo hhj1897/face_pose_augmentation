@@ -1,11 +1,9 @@
-import torch
-from typing import Dict, Tuple, Sequence
-import numpy as np
 import math
-
-from scipy.spatial import Delaunay
+import numpy as np
 from copy import deepcopy
+from scipy.spatial import Delaunay
 from collections import defaultdict
+from typing import Dict, Tuple, Sequence
 
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
@@ -14,7 +12,8 @@ from . import pyMM3D as pyMM
 __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit_3d_shape', 'get_euler_angles',
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
            'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
-           'get_valid_internal_triangles', 'back_project_shape']
+           'get_valid_internal_triangles', 'adjust_anchors_z', 'adjust_rotated_anchors', 'back_project_shape',
+           'calc_barycentric_coordinates']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -206,7 +205,8 @@ def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
 
-    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).T), np.ascontiguousarray(tri.T),
+    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).T),
+                                np.ascontiguousarray(tri.astype(np.int32).T),
                                 np.ascontiguousarray(texture), np.ascontiguousarray(img_src),
                                 num_triangles, num_vertices, width, height, num_channels)
     
@@ -219,7 +219,8 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
     
-    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).T), np.ascontiguousarray(tri.T),
+    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).T),
+                                   np.ascontiguousarray(tri.astype(np.int32).T),
                                    np.ascontiguousarray(texture_tri), np.ascontiguousarray(img_src),
                                    num_vertices, num_triangles, width, height, num_channels)
     
@@ -307,172 +308,130 @@ def get_valid_internal_triangles(cont_ver: np.ndarray, tri: np.ndarray) -> np.nd
                 if np.all([bin1, bin2]):
                     valid_bin[conn_tri_ind[j]] = True
 
-    return valid_bin  
+    return valid_bin
 
 
-def AnchorAdjustment_Z(contour_all, contour_all_ref, adjust_bin, tri, img):
-    # height, width, nChannels = img.shape
-    adjust_ind = np.where(adjust_bin)[0]
-    # Get only z coordinates 
-    # We sovle the equation Y = AX
-    # where X is the (x,y) of outpoint_des
-    # Y and A represent relations between inpoints_src and outpoint_src
-    Y_Equ = []
-    A_Equ = []
-    
+def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
+                     adjust_bin: np.ndarray, tri: np.ndarray) -> np.ndarray:
+    # Solve the equation Y = AX only for z coordinates
+    y_equ = []
+    a_equ = []
+
     # for each outpoint
-    for pt in adjust_ind:    
-        # find the corresponding tri    
+    adjust_ind = np.where(adjust_bin)[0]
+    for pt in adjust_ind:
+        # find the corresponding tri
         tmp_bin = np.any(tri == pt, axis=0)
+
         # find connecting point
-        temp = tri[:, tmp_bin]    
-        connect = np.unique(temp)    
-        connect = sorted(list(set(connect).difference(set([pt]))))
+        temp = tri[:, tmp_bin]
+        connect = np.unique(temp)
+        connect = connect[connect != pt]
         for pt_con in connect:
             if adjust_bin[pt_con]:
                 # if connected to a point need adjustment, we module their relationships
-                z_offset = contour_all_ref[2, pt] - contour_all_ref[2, pt_con]                        
-                dis = contour_all_ref[:2, pt] - contour_all_ref[:2, pt_con]
-                dis = np.sqrt(dis.dot(dis))
-                weight = 1.0
-                #weight = 1 / dis; weight = 1;                        
+                z_offset = contour_all_ref[2, pt] - contour_all_ref[2, pt_con]
                 pt1 = np.where(adjust_ind == pt)[0]
-                pt_con1 = np.where(adjust_ind == pt_con)[0]            
+                pt_con1 = np.where(adjust_ind == pt_con)[0]
 
-                A = np.zeros(len(adjust_ind))
-                A[pt1] = 1
-                A[pt_con1] = -1                
-
-                A_Equ.append(A * weight)
-                Y_Equ.append(z_offset * weight)
+                a_equ.append(np.zeros(len(adjust_ind)))
+                a_equ[-1][pt1] = 1
+                a_equ[-1][pt_con1] = -1
+                y_equ.append(z_offset)
             else:
                 # if connected to solid point, we module the positions
                 z_new = contour_all_ref[2, pt] - contour_all_ref[2, pt_con] + contour_all[2, pt_con]
-                dis = contour_all_ref[:2, pt] - contour_all_ref[:2, pt_con]
-                dis = np.sqrt(dis.dot(dis))
-                weight = 1.0
-                #weight = 1 / dis; weight = 1;            
                 pt1 = np.where(adjust_ind == pt)[0]
-                A = np.zeros(len(adjust_ind))
-                A[pt1] = 1                
 
-                A_Equ.append(A * weight)
-                Y_Equ.append(z_new * weight)
-
-    A_Equ = np.array(A_Equ)
-    Y_Equ = np.array(Y_Equ)
+                a_equ.append(np.zeros(len(adjust_ind)))
+                a_equ[-1][pt1] = 1
+                y_equ.append(z_new)
 
     # get the new position
-    X = np.squeeze(np.linalg.lstsq(A_Equ, Y_Equ, rcond=None)[0])
+    x_equ = np.squeeze(np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0])
     contour_all_z = deepcopy(contour_all)
-    contour_all_z[2,adjust_ind] = X
+    contour_all_z[2, adjust_ind] = x_equ
 
-    return contour_all_z     
+    return contour_all_z
 
 
-def AnchorAdjustment_Rotate(all_vertex_src, all_vertex_ref, all_vertex_adjust, tri, anchor_flags, img):
-    # height, width, nChannels = img.shape
-    adjust_ind = np.where(np.any([anchor_flags==2, anchor_flags==3], axis=0))[0]        
-    # we sovle the equation Y = AX
-    # where X is the (x,y) of outpoint_des
-    # Y and A represent relations between inpoints_src and outpoint_src
-    Y_Equ = []
-    A_Equ = []
+def adjust_rotated_anchors(all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray, all_vertex_adjust: np.ndarray,
+                           tri: np.ndarray, anchor_flags: np.ndarray) -> np.ndarray:
+    # Solve the equation Y = AX for x and y coordinates
+    y_equ = []
+    a_equ = []
 
     # for each outpoint
-    for pt in adjust_ind:    
-        # find the corresponding tri    
+    adjust_ind = np.where(np.any([anchor_flags == 2, anchor_flags == 3], axis=0))[0]
+    for pt in adjust_ind:
+        # find the corresponding tri
         tmp_bin = np.any(tri == pt, axis=0)
+
         # find connecting point
-        temp = tri[:, tmp_bin]    
-        connect = np.unique(temp)    
-        connect = sorted(list(set(connect).difference(set([pt]))))
-        # the relationship of [pt, pt_con]    
-        for pt_con in connect:        
+        temp = tri[:, tmp_bin]
+        connect = np.unique(temp)
+        connect = connect[connect != pt]
+
+        # the relationship of [pt, pt_con]
+        for pt_con in connect:
             if anchor_flags[pt] == 2:
                 # if base point is a src point, prefer src relation
                 if anchor_flags[pt_con] == 1:
                     # if connect to a base point, module the positions
-                    x_new = all_vertex_src[0,pt] - all_vertex_src[0,pt_con] + all_vertex_adjust[0,pt_con]
-                    y_new = all_vertex_src[1,pt] - all_vertex_src[1,pt_con] + all_vertex_adjust[1,pt_con]
+                    x_new = all_vertex_src[0, pt] - all_vertex_src[0, pt_con] + all_vertex_adjust[0, pt_con]
+                    y_new = all_vertex_src[1, pt] - all_vertex_src[1, pt_con] + all_vertex_adjust[1, pt_con]
 
                     pt1 = np.where(adjust_ind == pt)[0]
 
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1] = 1                                
-                    A_Equ.append(A)
-                    Y_Equ.append(x_new)
-
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1+1] = 1                                
-                    A_Equ.append(A)
-                    Y_Equ.append(y_new)
-                else: #(anchor_flags(pt_con) == 2 || adjust_ind(pt_con) == 3)
-                    # src-src and src-ref relationships :
-                    # based on src relationship
-                    x_offset = all_vertex_src[0,pt] - all_vertex_src[0,pt_con]
-                    y_offset = all_vertex_src[1,pt] - all_vertex_src[1,pt_con]
+                    a_equ.append(np.zeros(shape=(2, 2 * len(adjust_ind))))
+                    a_equ[-1][0, 2 * pt1] = 1
+                    a_equ[-1][1, 2 * pt1 + 1] = 1
+                    y_equ.extend([x_new, y_new])
+                else:  # anchor_flags(pt_con) in [2, 3]
+                    # src-src and src-ref relationships: based on src relationship
+                    x_offset = all_vertex_src[0, pt] - all_vertex_src[0, pt_con]
+                    y_offset = all_vertex_src[1, pt] - all_vertex_src[1, pt_con]
 
                     pt1 = np.where(adjust_ind == pt)[0]
                     pt_con1 = np.where(adjust_ind == pt_con)[0]
 
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1] = 1
-                    A[2*pt_con1] = -1
-                    A_Equ.append(A)
-                    Y_Equ.append(x_offset)
-
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1+1] = 1
-                    A[2*pt_con1+1] = -1                
-                    A_Equ.append(A)
-                    Y_Equ.append(y_offset)
-            else: # (anchor_flags(pt) == 3)  
+                    a_equ.append(np.zeros(shape=(2, 2 * len(adjust_ind))))
+                    a_equ[-1][0, 2 * pt1] = 1
+                    a_equ[-1][0, 2 * pt_con1] = -1
+                    a_equ[-1][1, 2 * pt1 + 1] = 1
+                    a_equ[-1][1, 2 * pt_con1 + 1] = -1
+                    y_equ.extend([x_offset, y_offset])
+            else:  # anchor_flags(pt) == 3
                 # if it is a ref point, prefer ref relation
                 if anchor_flags[pt_con] == 1:
-                    # if connect to a base point, module the positions                
-                    x_new = all_vertex_ref[0,pt] - all_vertex_ref[0,pt_con] + all_vertex_adjust[0,pt_con]
-                    y_new = all_vertex_ref[1,pt] - all_vertex_ref[1,pt_con] + all_vertex_adjust[1,pt_con]                
+                    # if connect to a base point, module the positions
+                    x_new = all_vertex_ref[0, pt] - all_vertex_ref[0, pt_con] + all_vertex_adjust[0, pt_con]
+                    y_new = all_vertex_ref[1, pt] - all_vertex_ref[1, pt_con] + all_vertex_adjust[1, pt_con]
 
                     pt1 = np.where(adjust_ind == pt)[0]
 
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1] = 1                                
-                    A_Equ.append(A)
-                    Y_Equ.append(x_new)
-
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1+1] = 1
-                    A_Equ.append(A)
-                    Y_Equ.append(y_new)
-                else: #if(adjust_ind(j) == 3)
-                    # ref-ref relationships :
-                    # based on ref relationship                
-                    x_offset = all_vertex_ref[0,pt] - all_vertex_ref[0,pt_con]
-                    y_offset = all_vertex_ref[1,pt] - all_vertex_ref[1,pt_con]
+                    a_equ.append(np.zeros(shape=(2, 2 * len(adjust_ind))))
+                    a_equ[-1][0, 2 * pt1] = 1
+                    a_equ[-1][1, 2 * pt1 + 1] = 1
+                    y_equ.extend([x_new, y_new])
+                else:
+                    # ref-ref relationships: based on ref relationship
+                    x_offset = all_vertex_ref[0, pt] - all_vertex_ref[0, pt_con]
+                    y_offset = all_vertex_ref[1, pt] - all_vertex_ref[1, pt_con]
 
                     pt1 = np.where(adjust_ind == pt)[0]
                     pt_con1 = np.where(adjust_ind == pt_con)[0]
 
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1] = 1
-                    A[2*pt_con1] = -1
-                    A_Equ.append(A)
-                    Y_Equ.append(x_offset)
-
-                    A = np.zeros(2*len(adjust_ind))
-                    A[2*pt1+1] = 1
-                    A[2*pt_con1+1] = -1                
-                    A_Equ.append(A)
-                    Y_Equ.append(y_offset)
-
-    A_Equ = np.array(A_Equ)
-    Y_Equ = np.array(Y_Equ)
+                    a_equ.append(np.zeros(shape=(2, 2 * len(adjust_ind))))
+                    a_equ[-1][0, 2 * pt1] = 1
+                    a_equ[-1][0, 2 * pt_con1] = -1
+                    a_equ[-1][1, 2 * pt1 + 1] = 1
+                    a_equ[-1][1, 2 * pt_con1 + 1] = -1
+                    y_equ.extend([x_offset, y_offset])
 
     # get the new position
-    X = np.squeeze(np.linalg.lstsq(A_Equ, Y_Equ, rcond=None)[0])    
-
-    all_vertex_adjust[:2,adjust_ind] = X.reshape((2,-1), order='F')
+    x_equ = np.squeeze(np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0])
+    all_vertex_adjust[:2, adjust_ind] = x_equ.reshape((2, -1), order='F')
     all_vertex_adjust[2, adjust_ind] = all_vertex_ref[2, adjust_ind]
 
     return all_vertex_adjust
@@ -676,7 +635,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     contour_all_new = np.hstack(contlist_new)
 
     # finally refine non_solid contour
-    contour_all_z = AnchorAdjustment_Z(contour_all_new, contour_all_ref, ~solid_depth_bin, tri_all, img)
+    contour_all_z = adjust_anchors_z(contour_all_new, contour_all_ref, ~solid_depth_bin, tri_all)
     contour_all_new[2,:] = contour_all_z[2,:]
 
     counter = 0
@@ -746,8 +705,8 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
         anchor_flags.append(flags)
     anchor_flags = np.hstack(anchor_flags)
 
-    all_vertex_adjust = AnchorAdjustment_Rotate(
-        all_vertex_src, all_vertex_ref, all_vertex_adjust, bg_tri, anchor_flags, img)
+    all_vertex_adjust = adjust_rotated_anchors(
+        all_vertex_src, all_vertex_ref, all_vertex_adjust, bg_tri, anchor_flags)
 
     counter = 0
     contlist_ref = []
