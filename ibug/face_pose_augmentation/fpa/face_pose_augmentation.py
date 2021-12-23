@@ -26,7 +26,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         vertex, face_models['Model_FWH'], face_models['Model_Completion'], face_models['conn_point_info'])
 
     height, width = image.shape[:2]
-    new_img = image.astype(np.float64, order='F') / 255.0
+    new_img = image.astype(np.float64) / 255.0
 
     # apply camera rotation to the 3D mesh    
     projected_vertex_full = project_shape(vertex_full, fR, T, roi_box)
@@ -153,12 +153,9 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
             all_vertex_ref[2, zmax_ind] = all_vertex_ref[2].max()
 
         # 4. Get Correspondence
-        valid_half = np.zeros((tri_full.shape[1], 1))
         _, tri_ind = z_buffer_tri(all_vertex_ref, all_tri, np.zeros((all_tri.shape[1], 1)),
                                   -np.ones((height, width, 1)))
-        corres_map = FaceFrontalizationMappingNosym(np.zeros(new_img.shape[:2], order='F'), tri_ind, all_vertex_src,
-                                                    all_vertex_ref, all_tri, bg_tri_num, valid_half, vertex.shape[1],
-                                                    face_models['tri_plus'].shape[1])
+        corres_map = FaceFrontalizationMappingNosym(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
         if yaw_delta < 0:
             pts = np.vstack(([corres_map.shape[1], -1], 
                              contlist_ref[-1][:2, wp_num + 1: wp_num + hp_num + 3].T - 1,

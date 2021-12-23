@@ -191,7 +191,6 @@ def project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbo
 
 
 def parse_pose_parameters(pose_params: np.ndarray) -> Tuple[float, float, float, np.ndarray, float]:
-    pose_params = np.squeeze(pose_params)
     phi, gamma, theta = pose_params[:3]
     t3d = pose_params[3:6]
     f = pose_params[-1]
@@ -205,12 +204,11 @@ def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
 
-    img, tri_ind = pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).T),
-                                np.ascontiguousarray(tri.astype(np.int32).T),
-                                np.ascontiguousarray(texture), np.ascontiguousarray(img_src),
-                                num_triangles, num_vertices, width, height, num_channels)
-    
-    return np.squeeze(img), np.squeeze(tri_ind)
+    return pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).astype(np.float64).T),
+                        np.ascontiguousarray(tri.astype(np.int32).T),
+                        np.ascontiguousarray(texture.astype(np.float64)),
+                        np.ascontiguousarray(img_src.astype(np.float64)),
+                        num_triangles, num_vertices, width, height, num_channels)
 
 
 def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.ndarray,
@@ -219,12 +217,11 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
     
-    img, tri_ind = pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).T),
-                                   np.ascontiguousarray(tri.astype(np.int32).T),
-                                   np.ascontiguousarray(texture_tri), np.ascontiguousarray(img_src),
-                                   num_vertices, num_triangles, width, height, num_channels)
-    
-    return np.squeeze(img), np.squeeze(tri_ind)
+    return pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).astype(np.float64).T),
+                           np.ascontiguousarray(tri.astype(np.int32).T),
+                           np.ascontiguousarray(texture_tri.astype(np.float64)),
+                           np.ascontiguousarray(img_src.astype(np.float64)),
+                           num_vertices, num_triangles, width, height, num_channels)
 
 
 def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines: Sequence[np.ndarray],
@@ -348,9 +345,9 @@ def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
                 y_equ.append(z_new)
 
     # get the new position
-    x_equ = np.squeeze(np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0])
+    x_equ = np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0]
     contour_all_z = deepcopy(contour_all)
-    contour_all_z[2, adjust_ind] = x_equ
+    contour_all_z[2, adjust_ind] = x_equ.reshape(-1)
 
     return contour_all_z
 
@@ -430,7 +427,7 @@ def adjust_rotated_anchors(all_vertex_src: np.ndarray, all_vertex_ref: np.ndarra
                     y_equ.extend([x_offset, y_offset])
 
     # get the new position
-    x_equ = np.squeeze(np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0])
+    x_equ = np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0]
     all_vertex_adjust[:2, adjust_ind] = x_equ.reshape((2, -1), order='F')
     all_vertex_adjust[2, adjust_ind] = all_vertex_ref[2, adjust_ind]
 
@@ -596,6 +593,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     # Finally refine the anchor depth with real depth
     depth_ref, tri_ind = z_buffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2, :][:, np.newaxis],
                                   np.zeros((height, width, 1)))
+    depth_ref = depth_ref.squeeze(axis=-1)
     # # test draw
     # im1 = Image.fromarray(( 255*(depth_ref-np.min(depth_ref))/(np.max(depth_ref)-np.min(depth_ref)) ).astype('uint8'))
     # im2 = Image.fromarray((255*tri_ind/np.max(tri_ind)).astype('uint8'))    
@@ -717,110 +715,25 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     return contlist_ref, t3d_ref
 
 
-def FaceFrontalizationMapping(mask, tri_ind, all_vertex_src, all_vertex_ref, all_tri, 
-                              bg_tri_num, valid_tri_half, vertex_length, tri_length, sym_tri_list):
-    height, width = mask.shape
-    nChannels = 1
+def FaceFrontalizationMappingNosym(tri_ind, all_vertex_src, all_vertex_ref, all_tri):
+    height, width = tri_ind.shape[:2]
     all_ver_dim, all_ver_length = all_vertex_src.shape
     all_tri_dim, all_tri_length = all_tri.shape
-    # From matlab index to C index
-    # tri_ind = tri_ind - 1
     all_vertex_src = all_vertex_src - 1
     all_vertex_ref = all_vertex_ref - 1
-    # all_tri = all_tri - 1
-    # sym_tri_list = sym_tri_list - 1
-    symlist_length = sym_tri_list.shape[1]
 
-    # make sure they are F-contiguous
-    if not mask.flags.f_contiguous:
-        mask = mask.copy(order='F')
-
-    if not tri_ind.flags.f_contiguous:
-        tri_ind = tri_ind.copy(order='F')
-    if tri_ind.dtype != np.float64:
-        tri_ind = tri_ind.astype(np.float64)
-
-    if not all_vertex_src.flags.f_contiguous:
-        all_vertex_src = all_vertex_src.copy(order='F')
-    if not all_vertex_ref.flags.f_contiguous:
-        all_vertex_ref = all_vertex_ref.copy(order='F')
-
-    if not all_tri.flags.f_contiguous:
-        all_tri = all_tri.copy(order='F')
-    if all_tri.dtype != np.float64:
-        all_tri = all_tri.astype(np.float64)   
-
-    if not valid_tri_half.flags.f_contiguous:
-        valid_tri_half = valid_tri_half.copy(order='F')    
-    if valid_tri_half.dtype != np.float64:
-        valid_tri_half = valid_tri_half.astype(np.float64)   
-
-    if not sym_tri_list.flags.f_contiguous:
-        sym_tri_list = sym_tri_list.copy(order='F')
-    if sym_tri_list.dtype != np.float64:
-        sym_tri_list = sym_tri_list.astype(np.float64)       
-
-    corres_map, corres_map_sym = pyFF.pyFaceFrontalizationMapping(
-        mask, width, height, nChannels, tri_ind, all_vertex_src, all_vertex_ref, all_ver_dim, all_ver_length,
-        all_tri, all_tri_dim, all_tri_length, bg_tri_num, valid_tri_half, vertex_length, tri_length,
-        sym_tri_list, symlist_length)
-    # corres_map = corres_map + 1
-    # corres_map_sym = corres_map_sym + 1
-
-    return corres_map, corres_map_sym
-
-
-def FaceFrontalizationMappingNosym(mask, tri_ind, all_vertex_src, all_vertex_ref, all_tri, 
-                                   bg_tri_num, valid_tri_half, vertex_length, tri_length):
-    height, width = mask.shape
-    nChannels = 1
-    all_ver_dim, all_ver_length = all_vertex_src.shape
-    all_tri_dim, all_tri_length = all_tri.shape
-    # From matlab index to C index
-    # tri_ind = tri_ind - 1
-    all_vertex_src = all_vertex_src - 1
-    all_vertex_ref = all_vertex_ref - 1
-    # all_tri = all_tri - 1
-
-    # make sure they are F-contiguous
-    if not mask.flags.f_contiguous:
-        mask = mask.copy(order='F')
-
-    if not tri_ind.flags.f_contiguous:
-        tri_ind = tri_ind.copy(order='F')
-    if tri_ind.dtype != np.float64:
-        tri_ind = tri_ind.astype(np.float64)
-
-    if not all_vertex_src.flags.f_contiguous:
-        all_vertex_src = all_vertex_src.copy(order='F')
-    if not all_vertex_ref.flags.f_contiguous:
-        all_vertex_ref = all_vertex_ref.copy(order='F')
-
-    if not all_tri.flags.f_contiguous:
-        all_tri = all_tri.copy(order='F')
-    if all_tri.dtype != np.float64:
-        all_tri = all_tri.astype(np.float64)   
-
-    if not valid_tri_half.flags.f_contiguous:
-        valid_tri_half = valid_tri_half.copy(order='F')    
-    if valid_tri_half.dtype != np.float64:
-        valid_tri_half = valid_tri_half.astype(np.float64)     
-
-    corres_map = pyFF.pyFaceFrontalizationMappingNosym(
-        mask, width, height, nChannels, tri_ind, 
-        all_vertex_src, all_vertex_ref, all_ver_dim, all_ver_length,
-        all_tri, all_tri_dim, all_tri_length, bg_tri_num,
-        valid_tri_half, vertex_length, tri_length)
-
-    return corres_map
+    return pyFF.pyFaceFrontalizationMappingNosym(
+        np.ascontiguousarray(tri_ind.astype(np.int32)), width, height,
+        np.ascontiguousarray(all_vertex_src.astype(np.float64).T),
+        np.ascontiguousarray(all_vertex_ref.astype(np.float64).T), all_ver_dim, all_ver_length,
+        np.ascontiguousarray(all_tri.astype(np.int32).T), all_tri_dim, all_tri_length)
 
 
 def FaceFrontalizationFilling(img, corres_map):
-    height, width, nChannels = img.shape
-    # # From matlab index to C index
-    # corres_map = corres_map - 1
-    result = pyFF.pyFaceFrontalizationFilling(img, width, height, nChannels, corres_map)
-    return result
+    height, width, num_channels = img.shape
+    return pyFF.pyFaceFrontalizationFilling(np.ascontiguousarray(img.astype(np.float64)),
+                                            width, height, num_channels,
+                                            np.ascontiguousarray(corres_map.astype(np.float64)))
 
 
 def calc_barycentric_coordinates(pt, vertices, tri_list):
