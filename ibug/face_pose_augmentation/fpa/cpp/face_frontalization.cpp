@@ -12,8 +12,8 @@ FaceFrontalization::FaceFrontalization() {}
 FaceFrontalization::~FaceFrontalization() {}
 
 FaceFrontalization::FaceFrontalization(
-    const long* tri_ind, int width, int height, const double* all_vertex_src, const double* all_vertex_ref,
-    int all_ver_dim, int all_ver_length, const long* all_tri, int all_tri_dim, int all_tri_length)
+    const long* tri_ind, int width, int height, const double* all_vertex_src,
+    const double* all_vertex_ref, int all_ver_length, const long* all_tri, int all_tri_length)
 {
     this->tri_ind = tri_ind;
     this->width = width;
@@ -21,11 +21,9 @@ FaceFrontalization::FaceFrontalization(
 
     this->all_vertex_src = all_vertex_src;
     this->all_vertex_ref = all_vertex_ref;
-    this->all_ver_dim = all_ver_dim;
     this->all_ver_length = all_ver_length;
 
     this->all_tri = all_tri;
-    this->all_tri_dim = all_tri_dim;
     this->all_tri_length = all_tri_length;
 }
 
@@ -53,9 +51,9 @@ void FaceFrontalization::frontalization_mapping_nosym(double* corres_map)
     double pt2[2];
     double pt3[2];
 
-    for(y = 0; y < height; y++)
+    for(y = 0; y < height; ++y)
     {
-        for(x = 0; x < width; x++)
+        for(x = 0; x < width; ++x)
         {
             corres_map[(y * width + x) * 2] = -1;
             corres_map[(y * width + x) * 2 + 1] = -1;
@@ -70,34 +68,34 @@ void FaceFrontalization::frontalization_mapping_nosym(double* corres_map)
 
             // I think this the correct ones - Shiyang
             // if it is on the background (big tri); Positions on the des image
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 0];
-            pt1[0] = all_vertex_ref[all_ver_dim * pt_ind + 0];
-            pt1[1] = all_vertex_ref[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri];
+            pt1[0] = all_vertex_ref[pt_ind];
+            pt1[1] = all_vertex_ref[pt_ind + all_ver_length];
 
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 1];
-            pt2[0] = all_vertex_ref[all_ver_dim * pt_ind + 0];
-            pt2[1] = all_vertex_ref[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri + all_tri_length];
+            pt2[0] = all_vertex_ref[pt_ind];
+            pt2[1] = all_vertex_ref[pt_ind + all_ver_length];
 
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 2];
-            pt3[0] = all_vertex_ref[all_ver_dim * pt_ind + 0];
-            pt3[1] = all_vertex_ref[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri + all_tri_length * 2];
+            pt3[0] = all_vertex_ref[pt_ind];
+            pt3[1] = all_vertex_ref[pt_ind + all_ver_length];
 
             pt[0] = x;
             pt[1] = y;
             FaceFrontalization::position2weight(weight, pt, pt1, pt2, pt3);
 
             // Positions on the src img
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 0];
-            pt1[0] = all_vertex_src[all_ver_dim * pt_ind + 0];
-            pt1[1] = all_vertex_src[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri];
+            pt1[0] = all_vertex_src[pt_ind];
+            pt1[1] = all_vertex_src[pt_ind + all_ver_length];
 
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 1];
-            pt2[0] = all_vertex_src[all_ver_dim * pt_ind + 0];
-            pt2[1] = all_vertex_src[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri + all_tri_length];
+            pt2[0] = all_vertex_src[pt_ind];
+            pt2[1] = all_vertex_src[pt_ind + all_ver_length];
 
-            pt_ind = (int)all_tri[all_tri_dim * corres_tri + 2];
-            pt3[0] = all_vertex_src[all_ver_dim * pt_ind + 0];
-            pt3[1] = all_vertex_src[all_ver_dim * pt_ind + 1];
+            pt_ind = all_tri[corres_tri + all_tri_length * 2];
+            pt3[0] = all_vertex_src[pt_ind];
+            pt3[1] = all_vertex_src[pt_ind + all_ver_length];
 
             corres_map[(y * width + x) * 2] = weight[0] * pt1[0] + weight[1] * pt2[0] + weight[2] * pt3[0];
             corres_map[(y * width + x) * 2 + 1] = weight[0] * pt1[1] + weight[1] * pt2[1] + weight[2] * pt3[1];
@@ -110,9 +108,9 @@ void FaceFrontalization::frontalization_filling(double* result)
     int x,y,n;
     double xx, yy;
 
-    for(y = 0; y < height; y++)
+    for(y = 0; y < height; ++y)
     {
-        for(x = 0; x < width; x++)
+        for(x = 0; x < width; ++x)
         {
             xx = corres_map_input[(y * width + x) * 2];
             yy = corres_map_input[(y * width + x) * 2 + 1];
@@ -185,16 +183,16 @@ void FaceFrontalization::bilinearInterpolation(
     /*x = min(max(0.0,x),width-1.0);
     y = min(max(0.0,y),height-1.0); */
 
-    if(x < 0 || x > width-1 || y < 0 || y > height-1)
+    if(x < 0 || x > width - 1 || y < 0 || y > height - 1)
     {
-        for(n = 0; n < nChannels; n++)
+        for(n = 0; n < nChannels; ++n)
         {
             pixel[n] = 0;
         }
         return;
     }
 
-    for(n = 0; n < nChannels; n++)
+    for(n = 0; n < nChannels; ++n)
     {
         f00[n] = img[((int)floor(y) * width + (int)floor(x)) * nChannels + n];
         f01[n] = img[((int)floor(y) * width + (int)ceil(x)) * nChannels + n];
@@ -205,7 +203,7 @@ void FaceFrontalization::bilinearInterpolation(
     x = x - floor(x);
     y = y - floor(y);
 
-    for(n = 0; n < nChannels; n++)
+    for(n = 0; n < nChannels; ++n)
     {
         pixel[n] = f00[n] * (1 - y) * (1 - x) + f01[n] * (1 - y) * x + f10[n] * y * (1 - x) + f11[n] * y * x;
     }

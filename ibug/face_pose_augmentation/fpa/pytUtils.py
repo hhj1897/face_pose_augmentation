@@ -717,16 +717,16 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
 
 def FaceFrontalizationMappingNosym(tri_ind, all_vertex_src, all_vertex_ref, all_tri):
     height, width = tri_ind.shape[:2]
-    all_ver_dim, all_ver_length = all_vertex_src.shape
-    all_tri_dim, all_tri_length = all_tri.shape
+    all_ver_length = all_vertex_src.shape[1]
+    all_tri_length = all_tri.shape[1]
     all_vertex_src = all_vertex_src - 1
     all_vertex_ref = all_vertex_ref - 1
 
     return pyFF.pyFaceFrontalizationMappingNosym(
         np.ascontiguousarray(tri_ind.astype(np.int32)), width, height,
-        np.ascontiguousarray(all_vertex_src.astype(np.float64).T),
-        np.ascontiguousarray(all_vertex_ref.astype(np.float64).T), all_ver_dim, all_ver_length,
-        np.ascontiguousarray(all_tri.astype(np.int32).T), all_tri_dim, all_tri_length)
+        np.ascontiguousarray(all_vertex_src.astype(np.float64)),
+        np.ascontiguousarray(all_vertex_ref.astype(np.float64)), all_ver_length,
+        np.ascontiguousarray(all_tri.astype(np.int32)), all_tri_length)
 
 
 def FaceFrontalizationFilling(img, corres_map):

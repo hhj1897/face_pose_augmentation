@@ -16,8 +16,8 @@ public:
     FaceFrontalization();
 
     FaceFrontalization(
-        const long* tri_ind, int width, int height, const double* all_vertex_src, const double* all_vertex_ref,
-        int all_ver_dim, int all_ver_length, const long* all_tri, int all_tri_dim, int all_tri_length);
+        const long* tri_ind, int width, int height, const double* all_vertex_src,
+        const double* all_vertex_ref, int all_ver_length, const long* all_tri, int all_tri_length);
 
     FaceFrontalization(const double* img, int width, int height, int nChannels, double* corres_map);
 
