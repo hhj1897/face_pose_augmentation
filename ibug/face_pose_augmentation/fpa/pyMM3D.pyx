@@ -4,8 +4,10 @@ cimport numpy as cnp
 
 # declare 3DMM class
 cdef extern from "cpp/MM3D.h":
-    void _ZBuffer "MM3D::ZBuffer" (double*, long*, double*, int, int, double*, int, int, int, double*, long*)
-    void _ZBufferTri "MM3D::ZBufferTri" (double*, long*, double*, int, int, double*, int, int, int, double*, long*)
+    void _ZBuffer "MM3D::ZBuffer" (
+        const double *, const long *, const double *, int, int, const double *, int, int, int, double *, long *)
+    void _ZBufferTri "MM3D::ZBufferTri" (
+        const double *, const long *, const double *, int, int, const double *, int, int, int, double *, long *)
 
 
 # Numpy must be initialized. When using numpy from C or Cython you must
