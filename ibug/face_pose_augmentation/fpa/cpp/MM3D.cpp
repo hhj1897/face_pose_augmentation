@@ -8,7 +8,7 @@ void MM3D::ZBuffer(double* vertex, long* tri, double* texture, int nver, int ntr
 {
     double* imgh = new double[width * height];
 
-    for(int i = 0; i < width * height; i++)
+    for(int i = 0; i < width * height; ++i)
     {
         imgh[i] = -99999999999999;
         tri_ind[i] = -1;
@@ -17,15 +17,15 @@ void MM3D::ZBuffer(double* vertex, long* tri, double* texture, int nver, int ntr
     //init image
     memcpy(img, src_img, width * height * nChannels * sizeof(double));
 
-    for(int i = 0; i < ntri; i++)
+    for(int i = 0; i < ntri; ++i)
     {
-        int p1 = tri[3 * i];
-        int p2 = tri[3 * i + 1];
-        int p3 = tri[3 * i + 2];
+        int p1 = tri[i];
+        int p2 = tri[i + ntri];
+        int p3 = tri[i + ntri * 2];
 
-        double *pt1 = vertex + 3 * p1;
-        double *pt2 = vertex + 3 * p2;
-        double *pt3 = vertex + 3 * p3;
+        double *pt1 = vertex + p1;
+        double *pt2 = vertex + p2;
+        double *pt3 = vertex + p3;
 
         double *t1 = texture + nChannels * p1;
         double *t2 = texture + nChannels * p2;
@@ -34,29 +34,30 @@ void MM3D::ZBuffer(double* vertex, long* tri, double* texture, int nver, int ntr
         int x_min = (int)ceil(min(min(pt1[0], pt2[0]), pt3[0]));
         int x_max = (int)floor(max(max(pt1[0], pt2[0]), pt3[0]));
 
-        int y_min = (int)ceil(min(min(pt1[1], pt2[1]), pt3[1]));
-        int y_max = (int)floor(max(max(pt1[1], pt2[1]), pt3[1]));
+        int y_min = (int)ceil(min(min(pt1[nver], pt2[nver]), pt3[nver]));
+        int y_max = (int)floor(max(max(pt1[nver], pt2[nver]), pt3[nver]));
 
         if(x_max < x_min || y_max < y_min)
             continue;
 
-        x_min = min(max(x_min, 0), width-1);
-        x_max = min(max(x_max, 0), width-1);
-        y_min = min(max(y_min, 0), height-1);
-        y_max = min(max(y_max, 0), height-1);
+        x_min = min(max(x_min, 0), width - 1);
+        x_max = min(max(x_max, 0), width - 1);
+        y_min = min(max(y_min, 0), height - 1);
+        y_max = min(max(y_max, 0), height - 1);
 
-        for(int x = x_min; x <= x_max; x++)
+        for(int y = y_min; y <= y_max; ++y)
         {
-            for (int y = y_min; y <= y_max; y++)
+            for(int x = x_min; x <= x_max; ++x)
             {
                 double point[2] = {(double)x, (double)y};
-                if (PointInTri(point, pt1, pt2, pt3))
+                if(PointInTri(point, pt1, pt2, pt3, nver))
                 {
-                    double det = (pt2[1] - pt3[1]) * (pt1[0] - pt3[0]) + (pt3[0] - pt2[0]) * (pt1[1] - pt3[1]);
-                    double l1 = ((pt2[1] - pt3[1]) * (x - pt3[0]) + (pt3[0] - pt2[0]) * (y - pt3[1])) / det;
-                    double l2 = ((pt3[1] - pt1[1]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[1])) / det;
+                    double det = (pt2[nver] - pt3[nver]) * (pt1[0] - pt3[0]) +
+                        (pt3[0] - pt2[0]) * (pt1[nver] - pt3[nver]);
+                    double l1 = ((pt2[nver] - pt3[nver]) * (x - pt3[0]) + (pt3[0] - pt2[0]) * (y - pt3[nver])) / det;
+                    double l2 = ((pt3[nver] - pt1[nver]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[nver])) / det;
                     double l3 = 1.0 - l1 - l2;
-                    double z = l1 * pt1[2] + l2 * pt2[2] + l3 * pt3[2];
+                    double z = l1 * pt1[nver * 2] + l2 * pt2[nver * 2] + l3 * pt3[nver * 2];
                     if(imgh[y * width + x] < z)
                     {
                         imgh[y * width + x] = z;
@@ -79,7 +80,7 @@ void MM3D::ZBufferTri(double* vertex, long* tri, double* texture_tri, int nver, 
 {
     double* imgh = new double[width * height];
 
-    for(int i = 0; i < width * height; i++)
+    for(int i = 0; i < width * height; ++i)
     {
         imgh[i] = -99999999999999;
         tri_ind[i] = -1;
@@ -88,38 +89,39 @@ void MM3D::ZBufferTri(double* vertex, long* tri, double* texture_tri, int nver, 
     //init image
     memcpy(img, src_img, width * height * nChannels * sizeof(double));
 
-    for(int i = 0; i < ntri; i++)
+    for(int i = 0; i < ntri; ++i)
     {
-        double *pt1 = vertex + 3 * tri[3 * i];
-        double *pt2 = vertex + 3 * tri[3 * i + 1];
-        double *pt3 = vertex + 3 * tri[3 * i + 2];
+        double *pt1 = vertex + tri[i];
+        double *pt2 = vertex + tri[i + ntri];
+        double *pt3 = vertex + tri[i + ntri * 2];
 
         int x_min = (int)ceil(min(min(pt1[0], pt2[0]), pt3[0]));
         int x_max = (int)floor(max(max(pt1[0], pt2[0]), pt3[0]));
 
-        int y_min = (int)ceil(min(min(pt1[1], pt2[1]), pt3[1]));
-        int y_max = (int)floor(max(max(pt1[1], pt2[1]), pt3[1]));
+        int y_min = (int)ceil(min(min(pt1[nver], pt2[nver]), pt3[nver]));
+        int y_max = (int)floor(max(max(pt1[nver], pt2[nver]), pt3[nver]));
 
         if(x_max < x_min || y_max < y_min)
             continue;
 
-        x_min = min(max(x_min, 0), width-1);
-        x_max = min(max(x_max, 0), width-1);
-        y_min = min(max(y_min, 0), height-1);
-        y_max = min(max(y_max, 0), height-1);
+        x_min = min(max(x_min, 0), width - 1);
+        x_max = min(max(x_max, 0), width - 1);
+        y_min = min(max(y_min, 0), height - 1);
+        y_max = min(max(y_max, 0), height - 1);
 
-        for(int x = x_min; x <= x_max; x++)
+        for(int y = y_min; y <= y_max; ++y)
         {
-            for (int y = y_min; y <= y_max; y++)
+            for(int x = x_min; x <= x_max; ++x)
             {
                 double point[2] = {(double)x, (double)y};
-                if (PointInTri(point, pt1, pt2, pt3))
+                if(PointInTri(point, pt1, pt2, pt3, nver))
                 {
-                    double det = (pt2[1] - pt3[1]) * (pt1[0] - pt3[0]) + (pt3[0] - pt2[0]) * (pt1[1] - pt3[1]);
-                    double l1 = ((pt2[1] - pt3[1]) * (x - pt3[0]) + (pt3[0] - pt2[0]) * (y - pt3[1])) / det;
-                    double l2 = ((pt3[1] - pt1[1]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[1])) / det;
+                    double det = (pt2[nver] - pt3[nver]) * (pt1[0] - pt3[0]) +
+                        (pt3[0] - pt2[0]) * (pt1[nver] - pt3[nver]);
+                    double l1 = ((pt2[nver] - pt3[nver]) * (x - pt3[0]) + (pt3[0] - pt2[0]) * (y - pt3[nver])) / det;
+                    double l2 = ((pt3[nver] - pt1[nver]) * (x - pt3[0]) + (pt1[0] - pt3[0]) * (y - pt3[nver])) / det;
                     double l3 = 1.0 - l1 - l2;
-                    double z = l1 * pt1[2] + l2 * pt2[2] + l3 * pt3[2];
+                    double z = l1 * pt1[nver * 2] + l2 * pt2[nver * 2] + l3 * pt3[nver * 2];
                     if(imgh[y * width + x] < z)
                     {
                         imgh[y * width + x] = z;
@@ -137,19 +139,19 @@ void MM3D::ZBufferTri(double* vertex, long* tri, double* texture_tri, int nver, 
     delete[] imgh;
 }
 
-bool MM3D::PointInTri(double point[], double pt1[], double pt2[], double pt3[])
+bool MM3D::PointInTri(double point[2], double* pt1, double* pt2, double* pt3, int nver)
 {
     double pointx = point[0];
     double pointy = point[1];
 
     double pt1x = pt1[0];
-    double pt1y = pt1[1];
+    double pt1y = pt1[nver];
 
     double pt2x = pt2[0];
-    double pt2y = pt2[1];
+    double pt2y = pt2[nver];
 
     double pt3x = pt3[0];
-    double pt3y = pt3[1];
+    double pt3y = pt3[nver];
 
     double v0x = pt3x - pt1x;
     double v0y = pt3y - pt1y;

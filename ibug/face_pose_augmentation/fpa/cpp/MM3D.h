@@ -6,7 +6,7 @@ namespace MM3D {
         double* src_img, int width, int height, int nChannels, double* img, long* tri_ind);
     void ZBufferTri(double* vertex, long* tri, double* texture_tri, int nver, int ntri,
         double* src_img, int width, int height, int nChannels, double* img, long* tri_ind);
-    bool PointInTri(double point[], double pt1[], double pt2[], double pt3[]);
+    bool PointInTri(double point[2], double* pt1, double* pt2, double* pt3, int nver);
 };
 
 #endif

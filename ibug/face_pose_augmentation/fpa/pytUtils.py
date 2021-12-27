@@ -204,11 +204,11 @@ def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
 
-    return pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).astype(np.float64).T),
-                        np.ascontiguousarray(tri.astype(np.int32).T),
+    return pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
+                        np.ascontiguousarray(tri.astype(np.int32)),
                         np.ascontiguousarray(texture.astype(np.float64)),
                         np.ascontiguousarray(img_src.astype(np.float64)),
-                        num_triangles, num_vertices, width, height, num_channels)
+                        num_vertices, num_triangles, width, height, num_channels)
 
 
 def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.ndarray,
@@ -217,8 +217,8 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
     
-    return pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).astype(np.float64).T),
-                           np.ascontiguousarray(tri.astype(np.int32).T),
+    return pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
+                           np.ascontiguousarray(tri.astype(np.int32)),
                            np.ascontiguousarray(texture_tri.astype(np.float64)),
                            np.ascontiguousarray(img_src.astype(np.float64)),
                            num_vertices, num_triangles, width, height, num_channels)
