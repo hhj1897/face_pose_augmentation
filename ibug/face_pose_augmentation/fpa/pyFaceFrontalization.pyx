@@ -5,12 +5,12 @@ cimport numpy as np
 # declare FaceFrontalization class
 cdef extern from "cpp/face_frontalization.h":
     cdef cppclass FaceFrontalization:
-        FaceFrontalization() except +
-        FaceFrontalization(const long*, int, int, const double*, const double*, int, const long*, int)
-        FaceFrontalization(const double*, int, int, int, double*) except +
+        FaceFrontalization()
+        FaceFrontalization(const long *, int, int, const double *, const double *, int, const long *, int)
+        FaceFrontalization(const double *, int, int, int, const double *)
 
-        void frontalization_mapping_nosym(double*)
-        void frontalization_filling(double*)
+        void frontalization_mapping_nosym(double *)
+        void frontalization_filling(double *)
 
 cdef extern from "numpy/arrayobject.h":
     void PyArray_ENABLEFLAGS(np.ndarray arr, int flags)

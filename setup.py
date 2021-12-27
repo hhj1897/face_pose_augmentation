@@ -39,6 +39,7 @@ extensions = [
               language='c++'),
     Extension('.'.join(package_location + ['pyFaceFrontalization']),
               sources=[os.path.join(*(package_location + ['pyFaceFrontalization.pyx'])),
+                       os.path.join(*(package_location + ['cpp', 'MM3D.cpp'])),
                        os.path.join(*(package_location + ['cpp', 'face_frontalization.cpp']))],
               include_dirs=[np.get_include()],
               language='c++')]
