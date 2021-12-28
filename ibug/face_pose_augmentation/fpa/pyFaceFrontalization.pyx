@@ -9,7 +9,7 @@ cdef extern from "cpp/face_frontalization.h":
         FaceFrontalization(const long *, int, int, const double *, const double *, int, const long *, int)
         FaceFrontalization(const double *, int, int, int, const double *)
 
-        void frontalization_mapping_nosym(double *)
+        void frontalization_mapping(double *)
         void frontalization_filling(double *)
 
 cdef extern from "numpy/arrayobject.h":
@@ -21,10 +21,10 @@ cdef extern from "numpy/arrayobject.h":
 np.import_array()
 
 
-def pyFaceFrontalizationMappingNosym(np.ndarray[long, ndim=2, mode='c'] tri_ind not None, width, height,
-                                     np.ndarray[double, ndim=2, mode='c'] all_vertex_src not None,
-                                     np.ndarray[double, ndim=2, mode='c'] all_vertex_ref not None, all_ver_length,
-                                     np.ndarray[long, ndim=2, mode='c'] all_tri not None, all_tri_length):
+def pyFaceFrontalizationMapping(np.ndarray[long, ndim=2, mode='c'] tri_ind not None, width, height,
+                                np.ndarray[double, ndim=2, mode='c'] all_vertex_src not None,
+                                np.ndarray[double, ndim=2, mode='c'] all_vertex_ref not None, all_ver_length,
+                                np.ndarray[long, ndim=2, mode='c'] all_tri not None, all_tri_length):
     cdef np.ndarray[double, ndim=3, mode="c"] corres_map
 
     corres_map = np.zeros((height, width, 2), dtype=np.float64)
@@ -34,7 +34,7 @@ def pyFaceFrontalizationMappingNosym(np.ndarray[long, ndim=2, mode='c'] tri_ind 
         &all_vertex_src[0, 0], &all_vertex_ref[0, 0], all_ver_length,
         &all_tri[0, 0], all_tri_length)
 
-    c_ff.frontalization_mapping_nosym(&corres_map[0, 0, 0])
+    c_ff.frontalization_mapping(&corres_map[0, 0, 0])
 
     return corres_map
 

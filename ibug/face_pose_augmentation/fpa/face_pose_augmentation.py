@@ -5,7 +5,7 @@ import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
 from .pytUtils import make_rotation_matrix, project_shape, ImageMeshing, ImageRotation, \
-    FaceFrontalizationFilling, FaceFrontalizationMappingNosym, model_completion_bfm, \
+    create_rotated_correspondence_map, remap_image, model_completion_bfm, \
     z_buffer_tri, calc_barycentric_coordinates
 
 
@@ -74,6 +74,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
                     mouth_tri = Polygon([all_vertex_src[:2, x] for x in all_tri[:, tri_idx]])
                     _, closest_pt = nearest_points(lm, mouth_tri)
                     closest_pts.append([closest_pt.x, closest_pt.y])
+                closest_pts = np.vstack(closest_pts)
                 closest_idx = np.argmin(np.linalg.norm(closest_pts - pt, axis=1))
                 matching_tri_idx = bg_tri.shape[1] + face_models['tri'].shape[1] + closest_idx
                 matching_triangles[idx] = (matching_tri_idx, calc_barycentric_coordinates(
@@ -155,7 +156,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         # 4. Get Correspondence
         _, tri_ind = z_buffer_tri(all_vertex_ref, all_tri, np.zeros((all_tri.shape[1], 1)),
                                   -np.ones((height, width, 1)))
-        corres_map = FaceFrontalizationMappingNosym(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
+        corres_map = create_rotated_correspondence_map(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
         if yaw_delta < 0:
             pts = np.vstack(([corres_map.shape[1], -1], 
                              contlist_ref[-1][:2, wp_num + 1: wp_num + hp_num + 3].T - 1,
@@ -178,7 +179,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         if return_corres_map:
             maps_or_images.append(corres_map)
         else:
-            profile_image = FaceFrontalizationFilling(new_img, corres_map)
+            profile_image = remap_image(new_img, corres_map)
             profile_image = (255.0 * profile_image).astype(image.dtype)
             maps_or_images.append(profile_image)
 

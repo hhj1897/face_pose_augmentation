@@ -36,7 +36,7 @@ FaceFrontalization::FaceFrontalization(
     this->corres_map_input = corres_map;
 }
 
-void FaceFrontalization::frontalization_mapping_nosym(double *corres_map)
+void FaceFrontalization::frontalization_mapping(double *corres_map)
 {
     double coords[3] = {0.0, 0.0, 0.0};
     for(int y = 0; y < height; ++y)
@@ -89,16 +89,16 @@ void FaceFrontalization::frontalization_filling(double *result)
                 int right = (int)ceil(xx);
                 int top = (int)floor(yy);
                 int bottom = (int)ceil(yy);
-                double x_diff = xx - left;
-                double y_diff = yy - top;
+                double delta_x = xx - left;
+                double delta_y = yy - top;
                 for(int n = 0; n < nChannels; ++n)
                 {
                     const double &f00 = img[(top * width + left) * nChannels + n];
                     const double &f01 = img[(top * width + right) * nChannels + n];
                     const double &f10 = img[(bottom * width + left) * nChannels + n];
                     const double &f11 = img[(bottom * width + right) * nChannels + n];
-                    result[(y * width + x) * nChannels + n] = f00 * (1.0 - y_diff) * (1.0 - x_diff) +
-                        f01 * (1.0 - y_diff) * x_diff + f10 * y_diff * (1.0 - x_diff) + f11 * y_diff * x_diff;
+                    result[(y * width + x) * nChannels + n] = f00 * (1.0 - delta_y) * (1.0 - delta_x) +
+                        f01 * (1.0 - delta_y) * delta_x + f10 * delta_y * (1.0 - delta_x) + f11 * delta_y * delta_x;
                 }
             }
         }

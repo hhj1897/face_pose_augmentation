@@ -15,7 +15,7 @@ public:
 
     ~FaceFrontalization();
 
-    void frontalization_mapping_nosym(double *corres_map);
+    void frontalization_mapping(double *corres_map);
     void frontalization_filling(double *result);
 
 private:

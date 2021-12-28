@@ -13,7 +13,7 @@ __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
            'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
            'get_valid_internal_triangles', 'adjust_anchors_z', 'adjust_rotated_anchors', 'back_project_shape',
-           'calc_barycentric_coordinates']
+           'create_rotated_correspondence_map', 'remap_image', 'calc_barycentric_coordinates']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -111,7 +111,7 @@ def fit_model_with_valid_points(pt3d: np.ndarray, model: Dict, valid_ind: np.nda
     w = model['w']
     sigma = model['sigma']
 
-    keypoints1 = np.vstack([3 * valid_ind, 3 * valid_ind+1, 3 * valid_ind+2])
+    keypoints1 = np.vstack([3 * valid_ind, 3 * valid_ind + 1, 3 * valid_ind + 2])
     keypoints1 = keypoints1.ravel('F')
 
     alpha = np.zeros(w.shape[1])
@@ -715,28 +715,29 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     return contlist_ref, t3d_ref
 
 
-def FaceFrontalizationMappingNosym(tri_ind, all_vertex_src, all_vertex_ref, all_tri):
+def create_rotated_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray,
+                                      all_tri: np.ndarray) -> np.ndarray:
     height, width = tri_ind.shape[:2]
     all_ver_length = all_vertex_src.shape[1]
     all_tri_length = all_tri.shape[1]
     all_vertex_src = all_vertex_src - 1
     all_vertex_ref = all_vertex_ref - 1
 
-    return pyFF.pyFaceFrontalizationMappingNosym(
+    return pyFF.pyFaceFrontalizationMapping(
         np.ascontiguousarray(tri_ind.astype(np.int32)), width, height,
         np.ascontiguousarray(all_vertex_src.astype(np.float64)),
         np.ascontiguousarray(all_vertex_ref.astype(np.float64)), all_ver_length,
         np.ascontiguousarray(all_tri.astype(np.int32)), all_tri_length)
 
 
-def FaceFrontalizationFilling(img, corres_map):
+def remap_image(img: np.ndarray, corres_map: np.ndarray) -> np.ndarray:
     height, width, num_channels = img.shape
     return pyFF.pyFaceFrontalizationFilling(np.ascontiguousarray(img.astype(np.float64)),
                                             width, height, num_channels,
                                             np.ascontiguousarray(corres_map.astype(np.float64)))
 
 
-def calc_barycentric_coordinates(pt, vertices, tri_list):
+def calc_barycentric_coordinates(pt: np.ndarray, vertices: np.ndarray, tri_list: np.ndarray) -> np.ndarray:
     a = vertices[tri_list[:, 0]]
     b = vertices[tri_list[:, 1]]
     c = vertices[tri_list[:, 2]]
