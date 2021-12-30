@@ -45,7 +45,7 @@ void MM3D::ZBuffer(const double *vertex, const long *tri, const double *texture,
         {
             for(int x = x_min; x <= x_max; ++x)
             {
-                ComputeBaryCentricCoordinates(x, y, pt1, pt2, pt3, nver, coords);
+                ComputeBarycentricCoordinates(x, y, pt1, pt2, pt3, nver, coords);
                 if(0.0 <= coords[0] && 0.0 <= coords[1] && 0.0 <= coords[2])
                 {
                     double z = coords[0] * pt1[nver * 2] + coords[1] * pt2[nver * 2] + coords[2] * pt3[nver * 2];
@@ -100,7 +100,7 @@ void MM3D::ZBufferTri(const double *vertex, const long *tri, const double *textu
         {
             for(int x = x_min; x <= x_max; ++x)
             {
-                ComputeBaryCentricCoordinates(x, y, pt1, pt2, pt3, nver, coords);
+                ComputeBarycentricCoordinates(x, y, pt1, pt2, pt3, nver, coords);
                 if(0.0 <= coords[0] && 0.0 <= coords[1] && 0.0 <= coords[2])
                 {
                     double z = coords[0] * pt1[nver * 2] + coords[1] * pt2[nver * 2] + coords[2] * pt3[nver * 2];
@@ -121,7 +121,7 @@ void MM3D::ZBufferTri(const double *vertex, const long *tri, const double *textu
     delete[] imgh;
 }
 
-void MM3D::ComputeBaryCentricCoordinates(
+void MM3D::ComputeBarycentricCoordinates(
     double x, double y, const double *pt1, const double *pt2, const double *pt3, int nver, double coords[3])
 {
     double det = (pt2[nver] - pt3[nver]) * (pt1[0] - pt3[0]) + (pt3[0] - pt2[0]) * (pt1[nver] - pt3[nver]);

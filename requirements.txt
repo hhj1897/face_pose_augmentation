@@ -1,8 +1,8 @@
 numpy>=1.16.0
 scipy>=1.1.0
 torch>=1.1.0
-opencv-python>= 3.4.2
-python-igraph
+opencv-python>=3.4.2
+igraph>=0.8.3
 matplotlib
 shapely
 cython

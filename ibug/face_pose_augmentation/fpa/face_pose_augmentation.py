@@ -34,8 +34,8 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
 
     # 2. Image Meshing
     contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = ImageMeshing(
-        vertex, face_models['tri_plus'], vertex_full, tri_full, face_models['vertexm_full'],
-        projected_vertex_full, projected_vertexm_full, fR, T, roi_box, f, pitch, yaw, roll, t3d,
+        vertex, vertex_full, tri_full,
+        projected_vertex_full, projected_vertexm_full, fR, T, roi_box, pitch, yaw,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
         new_img, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
 

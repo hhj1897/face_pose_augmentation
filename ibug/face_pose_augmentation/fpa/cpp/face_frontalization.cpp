@@ -54,7 +54,7 @@ void FaceFrontalization::frontalization_mapping(double *corres_map)
                 const double *pt1 = all_vertex_ref + all_tri[corres_tri];
                 const double *pt2 = all_vertex_ref + all_tri[corres_tri + all_tri_length];
                 const double *pt3 = all_vertex_ref + all_tri[corres_tri + all_tri_length * 2];
-                MM3D::ComputeBaryCentricCoordinates(x, y, pt1, pt2, pt3, all_ver_length, coords);
+                MM3D::ComputeBarycentricCoordinates(x, y, pt1, pt2, pt3, all_ver_length, coords);
 
                 pt1 = all_vertex_src + all_tri[corres_tri];
                 pt2 = all_vertex_src + all_tri[corres_tri + all_tri_length];

@@ -229,7 +229,7 @@ def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines
     projected_vertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
     contour_points = deepcopy(contour_points)
     for idx in contour_points_to_refine:
-        selected = (np.argmin(projected_vertex[0, isolines[idx]]) if yaw <= 0
+        selected = (np.argmin(projected_vertex[0, isolines[idx]]) if yaw < 0
                     else np.argmax(projected_vertex[0, isolines[idx]]))
         contour_points[idx] = isolines[idx][selected]
 
@@ -249,22 +249,22 @@ def image_bbox_to_contour(bbox: np.ndarray, wpnum: float) -> Tuple[np.ndarray, i
     # top edge
     start_point = bbox[[0, 1], np.newaxis]
     interval = np.array([w_inter, 0])[:, np.newaxis]
-    img_contour = start_point + np.arange(0, 1+wp_num)*interval
+    img_contour = start_point + np.arange(0, 1 + wp_num)*interval
 
     # right edge
     start_point = bbox[[2, 1], np.newaxis]
     interval = np.array([0, h_inter])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+hp_num)*interval])
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1 + hp_num)*interval])
 
     # bottom edge
     start_point = bbox[[2, 3], np.newaxis]
     interval = np.array([-w_inter, 0])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+wp_num)*interval])
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1 + wp_num)*interval])
 
     # left edge
     start_point = bbox[[0, 3], np.newaxis]
     interval = np.array([0, -h_inter])[:, np.newaxis]
-    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1+hp_num)*interval])
+    img_contour = np.hstack([img_contour, start_point + np.arange(0, 1 + hp_num)*interval])
 
     return img_contour, int(wp_num), int(hp_num)
 
@@ -452,124 +452,104 @@ def back_project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, ro
     return vertex
 
 
-def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectVertex_full, ProjectVertexm_full,
-                 fR, T, roi_bbox, f, pitch, yaw, roll, t3d,
-                 keypoints, keypointsfull_contour, parallelfull_contour, img, layer_width, eliminate_inner_tri=False):
+def ImageMeshing(vertex, vertex_full, tri_full, projected_vertext_full, projected_vertextm_full, f_rot, tr,
+                 roi_bbox, pitch, yaw, keypoints, keypointsfull_contour, parallelfull_contour, img, layer_widths,
+                 eliminate_inner_tri=False):
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
     # The layers are set between face contour and bbox
-    height, width = img.shape[:2]
-    layer = len(layer_width)    
-    
-    contlist = [np.empty(shape=(3, 0)) for _ in range(layer+2)]
-    bboxlist = [np.empty(shape=(0,)) for _ in range(layer+2)]
+    im_height, im_width = img.shape[:2]
 
-    # 1. Get the necessary face_contour
+    contlist = []
+    bboxlist = []
+
+    # 1. Get the correct face contour
     if yaw < 0:
         face_contour_modify = list(range(8)) + list(range(24, 30))
     else:
         face_contour_modify = list(range(9, 23))
     face_contour_ind = refine_contour_points(pitch, yaw, vertex_full, parallelfull_contour,
                                              keypointsfull_contour, face_contour_modify)
-    face_contour = ProjectVertex_full[:, face_contour_ind]
+    face_contour = projected_vertext_full[:, face_contour_ind]
 
-    contlist[0] = face_contour
+    contlist.append(face_contour)
     tl = np.min(face_contour, axis=1)
     br = np.max(face_contour, axis=1)
-    bboxlist[0] = np.hstack([tl, br])
+    bboxlist.append(np.hstack([tl, br]))
 
-    # 2. Get the MultiLayers between face_contour and img_contour
-    # other layers
-    nosetip = keypoints[33]
-    contour_base = face_contour
-    face_center = np.mean(contour_base[:2], axis=1)
-
-    for i in range(1,1+layer):
-        curlayer_width = 1 + layer_width[i-1]
-        contour = face_center[:,np.newaxis] + curlayer_width * (contour_base[:2] - face_center[:,np.newaxis])     
-        
-        t3d_cur = (1-curlayer_width)*fR.dot(vertex[:,nosetip][:, np.newaxis]) + T
-
-        contour3d = project_shape(vertex_full[:,face_contour_ind], curlayer_width*fR, t3d_cur, roi_bbox)
-        
-        contour = np.vstack([contour, contour3d[2,:]])
-
-        contlist[i] = contour
-        tl = np.min(contour[:2,:], axis=1)
-        br = np.max(contour[:2,:], axis=1)
-        bboxlist[i] = np.hstack([tl, br])
+    # 2. Get the multiple layers between face_contour and img_contour
+    nose_tip = keypoints[33]
+    contour_base = face_contour[:2]
+    face_center = np.mean(contour_base, axis=1)
+    for lw in layer_widths:
+        curlayer_width = 1 + lw
+        contour = face_center[:, np.newaxis] + curlayer_width * (contour_base - face_center[:, np.newaxis])
+        t3d_cur = (1 - curlayer_width) * f_rot.dot(vertex[:, nose_tip][:, np.newaxis]) + tr
+        contour3d = project_shape(vertex_full[:, face_contour_ind], curlayer_width * f_rot, t3d_cur, roi_bbox)
+        contour = np.vstack([contour, contour3d[2, :]])
+        contlist.append(contour)
+        tl = np.min(contour[:2, :], axis=1)
+        br = np.max(contour[:2, :], axis=1)
+        bboxlist.append(np.hstack([tl, br]))
 
     # Get the img_contour
     wp_num = 7
-    bbox1 = bboxlist[layer]
-    bbox2 = bboxlist[layer-1]
+    bbox1 = bboxlist[-1]
+    bbox2 = bboxlist[-2]
     margin = bbox1 - bbox2
     bbox = bbox1 + margin
-    bbox[0] = min(bbox[0],1)
-    bbox[1] = min(bbox[1],1)
-    bbox[2] = max(bbox[2],width)
-    bbox[3] = max(bbox[3],height)
-    bboxlist[layer+1] = bbox
-    wp_num1 = round(wp_num / (bbox1[2]-bbox1[0]) * (bbox[2]-bbox[0]))
-
+    bbox[0] = min(bbox[0], 1)
+    bbox[1] = min(bbox[1], 1)
+    bbox[2] = max(bbox[2], im_width)
+    bbox[3] = max(bbox[3], im_height)
+    bboxlist.append(bbox)
+    wp_num1 = round(wp_num / (bbox1[2] - bbox1[0]) * (bbox[2] - bbox[0]))
     img_contour, wp_num, hp_num = image_bbox_to_contour(bbox, wp_num1)
-    contlist[layer+1] = np.vstack([img_contour, np.zeros((1,img_contour.shape[1]))])    
+    contlist.append(np.vstack([img_contour, np.zeros((1, img_contour.shape[1]))]))
 
     # Triangulation
-    contour_all = np.hstack([item for item in contlist if len(item) > 0])
-    tri_all = Delaunay(contour_all.T[:,:2]).simplices.T
+    contour_all = np.hstack([item for item in contlist if item.size > 0])
+    tri_all = Delaunay(contour_all.T[:, :2]).simplices.T
 
     # further judge the internal triangles, since there maybe concave tri
     if eliminate_inner_tri:
-        inbin = np.all(tri_all<face_contour.shape[1], axis=0)
+        inbin = np.all(tri_all < contlist[0].shape[1], axis=0)
         tri_inner = tri_all[:, inbin]
-        cont_inner = contlist[0]
-        valid_inner_tri = get_valid_internal_triangles(cont_inner, tri_inner)
-        tri_inner = tri_all[:, inbin]
-        tri_all = np.hstack([tri_all[:,~inbin], tri_inner[:,valid_inner_tri]])
+        valid_inner_tri = get_valid_internal_triangles(contlist[0], tri_inner)
+        tri_all = np.hstack([tri_all[:, ~inbin], tri_inner[:, valid_inner_tri]])
 
-    ## Now we need to determine the z coordinates of each contour point
+    # Now we need to determine the z coordinates of each contour point
     # Following the two considerations
     # 1. There always have face regions in the background
     # 2. We don't care about the alignment result of background pixels
 
-    # the z coordinates of img contour out
-    img_contour = contlist[-1]
-    img_contour_co = range(contour_all.shape[1]-img_contour.shape[1], contour_all.shape[1])
-
-    for i in range(len(img_contour_co)):    
+    # Assign proper z coordinates to image contour points
+    for idx in range(contour_all.shape[1] - contlist[-1].shape[1], contour_all.shape[1]):
         # find the related triangle
-        tmp_bin = np.any(tri_all == img_contour_co[i], axis=0)
-        conn_tri = tri_all[:, tmp_bin]    
+        tmp_bin = np.any(tri_all == idx, axis=0)
+        conn_tri = tri_all[:, tmp_bin]
         conn_point = np.unique(conn_tri)
-
-        conn_face_contour_ind = sorted(list(set(conn_point).difference(set(img_contour_co))))
-
-        if len(conn_face_contour_ind) == 0:
-            img_contour[2,i] = np.inf
-            continue    
-
-        # get the z coordinates of each connect face contour
-        z_coordinates = contour_all[2, conn_face_contour_ind]
-        img_contour[2,i] = np.mean(z_coordinates)    
-
-    contlist[-1] = img_contour
-    contour_all = np.hstack(contlist)
+        conn_face_contour_ind = [x for x in conn_point if x < contour_all.shape[1] - contlist[-1].shape[1]]
+        if len(conn_face_contour_ind) > 0:
+            contour_all[2, idx] = contour_all[2, conn_face_contour_ind].mean()
+        else:
+            contour_all[2, idx] = np.inf
 
     # Complement the point with no face contour correspondence
-    img_contour_co = np.arange(contour_all.shape[1]-img_contour.shape[1], contour_all.shape[1])
+    img_contour = contour_all[:, -contlist[-1].shape[1]:]
+    img_contour_co = np.arange(contour_all.shape[1] - img_contour.shape[1], contour_all.shape[1])
 
-    tmp_bin = np.isinf(img_contour[2,:])
-    invalid_co = np.where(tmp_bin==True)[0]
+    tmp_bin = np.isinf(img_contour[2, :])
+    invalid_co = np.where(tmp_bin == True)[0]
 
-    while len(invalid_co) > 0:   
+    while len(invalid_co) > 0:
         valid_co = np.where(~tmp_bin)[0]
         img_contour_co_cur = img_contour_co[valid_co]
 
-        for i in range(len(img_contour_co)):        
+        for i in range(len(img_contour_co)):
             # find the related triangle
             tmp_bin = np.any(tri_all == img_contour_co[i], axis=0)
-            conn_tri = tri_all[:, tmp_bin]    
+            conn_tri = tri_all[:, tmp_bin]
             conn_point = np.unique(conn_tri)
 
             conn_face_contour_ind = sorted(list(set(conn_point).intersection(set(img_contour_co_cur))))
@@ -578,7 +558,7 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
                 continue
 
             # get the z coordinates of each connect face contour
-            z_coordinates = contour_all[2, conn_face_contour_ind] 
+            z_coordinates = contour_all[2, conn_face_contour_ind]
             img_contour[2,i] = np.mean(z_coordinates)
 
         contlist[-1] = img_contour
@@ -591,12 +571,12 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     contour_all = np.hstack(contlist)
 
     # Finally refine the anchor depth with real depth
-    depth_ref, tri_ind = z_buffer(ProjectVertex_full, tri_full, ProjectVertexm_full[2, :][:, np.newaxis],
-                                  np.zeros((height, width, 1)))
+    depth_ref, tri_ind = z_buffer(projected_vertext_full, tri_full, projected_vertextm_full[2, :][:, np.newaxis],
+                                  np.zeros((im_height, im_width, 1)))
     depth_ref = depth_ref.squeeze(axis=-1)
     # # test draw
     # im1 = Image.fromarray(( 255*(depth_ref-np.min(depth_ref))/(np.max(depth_ref)-np.min(depth_ref)) ).astype('uint8'))
-    # im2 = Image.fromarray((255*tri_ind/np.max(tri_ind)).astype('uint8'))    
+    # im2 = Image.fromarray((255*tri_ind/np.max(tri_ind)).astype('uint8'))
 
     contour_all_ref = deepcopy(contour_all)
     # contlist_ref = deepcopy(contlist)
@@ -606,11 +586,11 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     solid_depth_bin_list[0] += 1
 
     for j in list(range(3,14))+list(range(18,30)):
-        count = 0        
-        for i in range(1,len(contlist_new)-1):        
+        count = 0
+        for i in range(1,len(contlist_new)-1):
             ray = contlist_new[i][:,j]
             x, y = np.around(ray[:2]).astype(np.int)
-            if np.any([x < 1, x > width, y < 1, y > height]):
+            if np.any([x < 1, x > im_width, y < 1, y > im_height]):
                 continue
             if tri_ind[y-1, x-1] == -1:
                 continue
@@ -622,8 +602,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
         for i in range(1,len(contlist_new)-1):
             ray = contlist_new[i][:,j]
             x, y = np.around(ray[:2]).astype(np.int)
-            if np.any([x < 1, x > width, y < 1, y > height]):
-                continue      
+            if np.any([x < 1, x > im_width, y < 1, y > im_height]):
+                continue
             if tri_ind[y-1, x-1] == -1:
                 continue
             contlist_new[i][2,j] = depth_ref[y-1, x-1]
@@ -639,8 +619,8 @@ def ImageMeshing(vertex, tri_plus, vertex_full, tri_full, vertexm_full, ProjectV
     counter = 0
     for i, item in enumerate(contlist):
         contlist[i] = contour_all_new[:, counter:counter+item.shape[1]]
-        counter += item.shape[1]  
-    
+        counter += item.shape[1]
+
     return contlist, tri_all, face_contour_ind, wp_num, hp_num
 
 
@@ -666,7 +646,7 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
         face_contour_modify = list(range(9, 23))
 
     adjust_ind = list(range(3, 14)) + list(range(18, 30))
-    yaw_base = min(yaw, 0) if yaw_ref < 0 else max(0, yaw)
+    yaw_base = min(yaw, -np.finfo(float).eps) if yaw_ref < 0 else max(0.0, yaw)
     yaw_delta = yaw_ref - yaw_base
     yaw_temp = yaw_base + yaw_delta / 2.5
 

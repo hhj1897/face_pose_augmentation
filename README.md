@@ -6,7 +6,7 @@ A toolbox for face pose augmentation based on [3DDFA](https://ieeexplore.ieee.or
 * [Sciypy](https://www.scipy.org/): `$pip3 install scipy`
 * [PyTorch](https://pytorch.org/): `$pip3 install torch torchvision`
 * [OpenCV](https://opencv.org/): `$pip3 install opencv-python`
-* [python-igraph](https://igraph.org/python/): `$pip3 install python-igraph` __Note__: On Windows, you may need to use conda to install this package by running `conda install -c conda-forge python-igraph`
+* [igraph](https://igraph.org/python/): `$pip3 install igraph` __Note__: On Windows, you may need to use conda to install this package by running `conda install -c conda-forge python-igraph`
 * [matplotlib](https://matplotlib.org/): `$pip3 install matplotlib`
 * [shapely](https://github.com/Toblerity/Shapely): `$pip3 install shapely`
 * [cython](https://cython.org/): `$pip3 install cython`
