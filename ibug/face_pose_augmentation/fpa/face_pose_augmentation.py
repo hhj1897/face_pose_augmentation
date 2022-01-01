@@ -115,10 +115,10 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         Pose_Para_src = np.array([pitch, yaw, roll]+list(t3d)+[f])
         Pose_Para_ref = np.array([pitch_ref, yaw_ref, roll_ref] + list(t3d_ref) + [f])
 
-        [contlist_ref, t3d_ref] = ImageRotation(contlist_src, bg_tri, vertex_full, tri_full, 
+        [contlist_ref, t3d_ref] = ImageRotation(contlist_src, bg_tri, vertex_full,
                                                 face_models['keypointsfull_contour'],
                                                 face_models['parallelfull_contour'],
-                                                Pose_Para_src, Pose_Para_ref, new_img,
+                                                Pose_Para_src, Pose_Para_ref,
                                                 RefVertex, fR, T, roi_box)
 
         bg_vertex_ref = np.hstack(contlist_ref)

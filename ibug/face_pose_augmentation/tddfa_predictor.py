@@ -92,8 +92,8 @@ class TDDFAPredictor(object):
             else:
                 roi_box = tdmm_params[:4]
                 params = tdmm_params[4:]
-                vertex, pts68, fR, T = reconstruct_from_3dmm(params)
-                camera_transform = {'fR': fR, 'T': T}
+                vertex, pts68, f_rot, tr = reconstruct_from_3dmm(params)
+                camera_transform = {'fR': f_rot, 'T': tr}
                 yaw, pitch, roll, t3d, f = parse_param_pose(params)
                 face_pose = {'yaw': yaw, 'pitch': pitch, 'roll': roll, 't3d': t3d, 'f': f}
                 return {'roi_box': roi_box, 'params': params, 'vertex': vertex, 'pts68': pts68,

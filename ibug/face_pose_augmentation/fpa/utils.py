@@ -94,6 +94,7 @@ def fit_3d_shape(pt3d: np.ndarray, f: float, rot_mat: np.ndarray, t: np.ndarray,
 
 
 def get_euler_angles(rot_mat: np.ndarray) -> Tuple[float, float, float]:
+    """ this function assumes rotation in z-y-x order """
     theta1 = math.atan2(rot_mat[1, 2], rot_mat[2, 2])
     c2 = (rot_mat[0, 0] ** 2 + rot_mat[0, 1] ** 2) ** 0.5
     theta2 = math.atan2(-rot_mat[0, 2], c2)
@@ -353,7 +354,7 @@ def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
 
 
 def adjust_rotated_anchors(all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray, all_vertex_adjust: np.ndarray,
-                           tri: np.ndarray, anchor_flags: np.ndarray) -> np.ndarray:
+                           bg_tri: np.ndarray, anchor_flags: np.ndarray) -> np.ndarray:
     # Solve the equation Y = AX for x and y coordinates
     y_equ = []
     a_equ = []
@@ -362,10 +363,10 @@ def adjust_rotated_anchors(all_vertex_src: np.ndarray, all_vertex_ref: np.ndarra
     adjust_ind = np.where(np.any([anchor_flags == 2, anchor_flags == 3], axis=0))[0]
     for pt in adjust_ind:
         # find the corresponding tri
-        tmp_bin = np.any(tri == pt, axis=0)
+        tmp_bin = np.any(bg_tri == pt, axis=0)
 
         # find connecting point
-        temp = tri[:, tmp_bin]
+        temp = bg_tri[:, tmp_bin]
         connect = np.unique(temp)
         connect = connect[connect != pt]
 
@@ -586,17 +587,17 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
     return contlist, tri_all, face_contour_ind, wp_num, hp_num
 
 
-def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
-                  isoline_face_contour, Pose_Para_src, Pose_Para_ref, img, 
-                  ProjectVertex_ref, fR, T, roi_box):
-    _, yaw, _, _, f = parse_pose_parameters(Pose_Para_src)
-    pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = parse_pose_parameters(Pose_Para_ref)
+def ImageRotation(contlist_src, bg_tri, vertex, face_contour_ind,
+                  isoline_face_contour, pose_params_src, pose_params_ref,
+                  projected_vertex_ref, f_rot, tr, roi_box):
+    _, yaw, _, _, f = parse_pose_parameters(pose_params_src)
+    pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = parse_pose_parameters(pose_params_ref)
 
     all_vertex = np.hstack(contlist_src)
     all_vertex_src = deepcopy(all_vertex)
 
     # 1. get the preliminary position on the ref frame    
-    all_vertex_ref = back_project_shape(all_vertex, fR, T, roi_box)
+    all_vertex_ref = back_project_shape(all_vertex, f_rot, tr, roi_box)
     # Go to the reference position
     R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
     all_vertex_ref = project_shape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
@@ -617,7 +618,7 @@ def ImageRotation(contlist_src, bg_tri, vertex, tri, face_contour_ind,
     face_contour_ind2 = refine_contour_points(pitch_ref, yaw_base, vertex, isoline_face_contour,
                                               face_contour_ind, face_contour_modify)
     face_contour_ind[adjust_ind] = face_contour_ind2[adjust_ind]
-    face_contour_ref = ProjectVertex_ref[:, face_contour_ind]
+    face_contour_ref = projected_vertex_ref[:, face_contour_ind]
     all_vertex_adjust = np.zeros(all_vertex_ref.shape)
     all_vertex_adjust[:, :face_contour_ref.shape[1]] = face_contour_ref
 

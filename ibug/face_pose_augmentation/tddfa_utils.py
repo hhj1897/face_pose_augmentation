@@ -1,78 +1,78 @@
 import numpy as np
+from typing import Tuple
 from math import cos, atan2, asin
 from .tddfa.utils.params import param_mean, param_std, u, w_shp, w_exp, u_base, w_shp_base, w_exp_base
 
 
-def matrix2angle(R):
+__all__ = ['matrix2angle', 'decompose_camera_matrix', 'parse_param', 'parse_param_pose', 'reconstruct_from_3dmm']
+
+
+def matrix2angle(rot_mat: np.ndarray) -> Tuple[float, float, float]:
     """ compute three Euler angles from a Rotation Matrix. Ref: http://www.gregslabaugh.net/publications/euler.pdf
     Args:
-        R: (3,3). rotation matrix
-    Returns:
+        rot_mat: (3,3). rotation matrix
+    Returns (assumes rotation in x-y-z order):
         x: yaw
         y: pitch
         z: roll
     """
-
-    if R[2, 0] != 1 or R[2, 0] != -1:
-        # It is minus in the reference
-        x = -asin(R[2, 0])
-        y = atan2(R[2, 1] / cos(x), R[2, 2] / cos(x))
-        z = atan2(R[1, 0] / cos(x), R[0, 0] / cos(x))
-
-    else:  # Gimbal lock
-        z = 0  # can be anything
-        if R[2, 0] == -1:
+    if -1.0 < rot_mat[2, 0] < 1.0:
+        x = -asin(rot_mat[2, 0])    # It is minus in the reference
+        y = atan2(rot_mat[2, 1] / cos(x), rot_mat[2, 2] / cos(x))
+        z = atan2(rot_mat[1, 0] / cos(x), rot_mat[0, 0] / cos(x))
+    else:
+        # Gimbal lock
+        z = 0   # can be anything
+        if rot_mat[2, 0] == -1:
             x = np.pi / 2
-            y = z + atan2(R[0, 1], R[0, 2])
+            y = z + atan2(rot_mat[0, 1], rot_mat[0, 2])
         else:
             x = -np.pi / 2
-            y = -z + atan2(-R[0, 1], -R[0, 2])
+            y = -z + atan2(-rot_mat[0, 1], -rot_mat[0, 2])
 
     return x, y, z
 
 
-def P2sRt(P):
-    """ decompositing camera matrix P.
+def decompose_camera_matrix(cam_mat: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
+    """ decompose camera matrix.
     Args:
-        P: (3, 4). Affine Camera Matrix.
+        cam_mat: (3, 4). Affine Camera Matrix.
     Returns:
         s: scale factor.
-        R: (3, 3). rotation matrix.
-        t2d: (2,). 2d translation.
+        rot_mat: (3, 3). rotation matrix.
+        t3d: (3,). 3d translation.
     """
-    t3d = P[:, 3]
-    R1 = P[0:1, :3]
-    R2 = P[1:2, :3]
-    s = (np.linalg.norm(R1) + np.linalg.norm(R2)) / 2.0
-    r1 = R1 / np.linalg.norm(R1)
-    r2 = R2 / np.linalg.norm(R2)
+    t3d = cam_mat[:, 3]
+    s = (np.linalg.norm(cam_mat[0, :3]) + np.linalg.norm(cam_mat[1, :3])) / 2.0
+    r1 = cam_mat[0, :3] / np.linalg.norm(cam_mat[0, :3])
+    r2 = cam_mat[1, :3] / np.linalg.norm(cam_mat[1, :3])
     r3 = np.cross(r1, r2)
+    rot_mat = np.vstack((r1, r2, r3))
 
-    R = np.concatenate((r1, r2, r3), 0)
-    return s, R, t3d
+    return s, rot_mat, t3d
 
 
-def parse_param(param):
-    """Work for both numpy and tensor"""
-    p_ = param[:12].reshape(3, -1)
-    p = p_[:, :3]
-    offset = p_[:, -1].reshape(3, 1)
+def parse_param(param: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """ works for both numpy and tensor """
+    cam_mat = param[:12].reshape(3, -1)
+    f_rot = cam_mat[:, :3]
+    tr = cam_mat[:, -1].reshape(3, 1)
     alpha_shp = param[12:52].reshape(-1, 1)
     alpha_exp = param[52:].reshape(-1, 1)
-    return p, offset, alpha_shp, alpha_exp
+    return f_rot, tr, alpha_shp, alpha_exp
 
 
-def parse_param_pose(param):
+def parse_param_pose(param: np.ndarray) -> Tuple[float, float, float, np.ndarray, float]:
     param = param * param_std + param_mean
-    Ps = param[:12].reshape(3, -1)  # camera matrix
-    s, R, t3d = P2sRt(Ps)
-    yaw, pitch, roll = matrix2angle(R)  # yaw, pitch, roll
+    cam_mat = param[:12].reshape(3, -1)
+    s, rot_mat, t3d = decompose_camera_matrix(cam_mat)
+    yaw, pitch, roll = matrix2angle(rot_mat)
     return yaw, pitch, roll, t3d, s
 
 
-def reconstruct_from_3dmm(param, dense=True):
+def reconstruct_from_3dmm(param: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     param = param * param_std + param_mean
-    fR, t3d, alpha_shp, alpha_exp = parse_param(param)
+    f_rot, tr, alpha_shp, alpha_exp = parse_param(param)
     vertex = (u + w_shp @ alpha_shp + w_exp @ alpha_exp).reshape(3, -1, order='F')
     pts68 = (u_base + w_shp_base @ alpha_shp + w_exp_base @ alpha_exp).reshape(3, -1, order='F')
-    return vertex, pts68, fR, t3d
+    return vertex, pts68, f_rot, tr
