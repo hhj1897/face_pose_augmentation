@@ -1,6 +1,6 @@
 import numpy as np
 from copy import deepcopy
-from .pytUtils import make_rotation_matrix, project_shape
+from .utils import make_rotation_matrix, project_shape
 
 
 def landmark_marching(pitch, yaw, roll, vertex, isoline, keypoints):  

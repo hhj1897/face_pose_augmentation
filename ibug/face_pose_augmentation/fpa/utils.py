@@ -13,7 +13,7 @@ __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
            'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
            'get_valid_internal_triangles', 'adjust_anchors_z', 'adjust_rotated_anchors', 'back_project_shape',
-           'create_rotated_correspondence_map', 'remap_image', 'calc_barycentric_coordinates']
+           'image_meshing', 'create_rotated_correspondence_map', 'remap_image', 'calc_barycentric_coordinates']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -452,9 +452,9 @@ def back_project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, ro
     return vertex
 
 
-def ImageMeshing(vertex, vertex_full, tri_full, projected_vertext_full, projected_vertextm_full, f_rot, tr,
-                 roi_bbox, pitch, yaw, keypoints, keypointsfull_contour, parallelfull_contour, img, layer_widths,
-                 eliminate_inner_tri=False):
+def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, projected_vertextm_full, f_rot, tr,
+                  roi_bbox, pitch, yaw, keypoints, keypointsfull_contour, parallelfull_contour, img, layer_widths,
+                  eliminate_inner_tri=False):
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
     # The layers are set between face contour and bbox
@@ -505,7 +505,6 @@ def ImageMeshing(vertex, vertex_full, tri_full, projected_vertext_full, projecte
     bboxlist.append(bbox)
     wp_num1 = round(wp_num / (bbox1[2] - bbox1[0]) * (bbox[2] - bbox[0]))
     img_contour, wp_num, hp_num = image_bbox_to_contour(bbox, wp_num1)
-    print(wp_num, hp_num, wp_num1, img_contour.shape[1])
     contlist.append(np.vstack([img_contour, np.zeros((1, img_contour.shape[1]))]))
 
     # Triangulation
@@ -517,7 +516,7 @@ def ImageMeshing(vertex, vertex_full, tri_full, projected_vertext_full, projecte
         inbin = np.all(tri_all < contlist[0].shape[1], axis=0)
         tri_inner = tri_all[:, inbin]
         valid_inner_tri = get_valid_internal_triangles(contlist[0], tri_inner)
-        tri_all = np.hstack([tri_all[:, ~inbin], tri_inner[:, valid_inner_tri]])
+        tri_all = np.hstack([tri_all[:, np.logical_not(inbin)], tri_inner[:, valid_inner_tri]])
 
     # Now we need to determine the z coordinates of each contour point
     # Following the two considerations
@@ -556,53 +555,33 @@ def ImageMeshing(vertex, vertex_full, tri_full, projected_vertext_full, projecte
         invalid_pts = (np.where(np.isinf(contour_all[2, -contlist[-1].shape[1]:]))[0] +
                        contour_all.shape[1] - contlist[-1].shape[1])
 
-    # Finally refine the anchor depth with real depth
+    # Refine the anchor depth with real depth
     depth_ref, tri_ind = z_buffer(projected_vertext_full, tri_full, projected_vertextm_full[2, :][:, np.newaxis],
                                   np.zeros((im_height, im_width, 1)))
     depth_ref = depth_ref.squeeze(axis=-1)
-
-    contour_all_ref = deepcopy(contour_all)
-    # contlist_ref = deepcopy(contlist)
-    contlist_new = deepcopy(contlist)
-
-    solid_depth_bin_list = [np.zeros(item.shape[1]) for item in contlist]
-    solid_depth_bin_list[0] += 1
-
-    for j in list(range(3,14))+list(range(18,29)):
+    solid_depth_bin_list = [np.zeros(item.shape[1], dtype=bool) if idx > 0 else
+                            np.ones(item.shape[1], dtype=bool) for idx, item in enumerate(contlist)]
+    for idx in list(range(3, 14)) + list(range(18, 29)):
         count = 0
-        for i in range(1,len(contlist_new)-1):
-            ray = contlist_new[i][:,j]
-            x, y = np.around(ray[:2]).astype(np.int)
-            if np.any([x < 1, x > im_width, y < 1, y > im_height]):
-                continue
-            if tri_ind[y-1, x-1] == -1:
-                continue
-            count += 1
+        for contour in contlist[1: -1]:
+            x, y = np.round(contour[:2, idx]).astype(int) - 1
+            if 0 <= x < im_width and 0 <= y < im_height and tri_ind[y, x] >= 0:
+                count += 1
+        if count >= 2:
+            for contour, solid_bin in zip(contlist[1: -1], solid_depth_bin_list[1:-1]):
+                x, y = np.round(contour[:2, idx]).astype(int) - 1
+                if 0 <= x < im_width and 0 <= y < im_height and tri_ind[y, x] >= 0:
+                    contour[2, idx] = depth_ref[y, x]
+                    solid_bin[idx] = True
+    solid_depth_bin = np.hstack(solid_depth_bin_list)
+    contour_all_new = np.hstack(contlist)
 
-        if count < 2:
-            continue
-
-        for i in range(1,len(contlist_new)-1):
-            ray = contlist_new[i][:,j]
-            x, y = np.around(ray[:2]).astype(np.int)
-            if np.any([x < 1, x > im_width, y < 1, y > im_height]):
-                continue
-            if tri_ind[y-1, x-1] == -1:
-                continue
-            contlist_new[i][2,j] = depth_ref[y-1, x-1]
-            solid_depth_bin_list[i][j] = 1
-
-    solid_depth_bin = np.hstack(solid_depth_bin_list).astype(np.bool)
-    contour_all_new = np.hstack(contlist_new)
-
-    # finally refine non_solid contour
-    contour_all_z = adjust_anchors_z(contour_all_new, contour_all_ref, ~solid_depth_bin, tri_all)
-    contour_all_new[2,:] = contour_all_z[2,:]
-
+    # Finally refine non_solid contour
     counter = 0
-    for i, item in enumerate(contlist):
-        contlist[i] = contour_all_new[:, counter:counter+item.shape[1]]
-        counter += item.shape[1]
+    contour_all_new = adjust_anchors_z(contour_all_new, contour_all, np.logical_not(solid_depth_bin), tri_all)
+    for idx, contour in enumerate(contlist):
+        contlist[idx] = contour_all_new[:, counter: counter + contour.shape[1]]
+        counter += contour.shape[1]
 
     return contlist, tri_all, face_contour_ind, wp_num, hp_num
 
