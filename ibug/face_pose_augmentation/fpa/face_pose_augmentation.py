@@ -4,7 +4,7 @@ import itertools
 import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
-from .utils import (make_rotation_matrix, project_shape, image_meshing, ImageRotation,
+from .utils import (make_rotation_matrix, project_shape, image_meshing, image_rotation,
                     create_rotated_correspondence_map, remap_image, model_completion_bfm,
                     z_buffer_tri, calc_barycentric_coordinates)
 
@@ -36,7 +36,7 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
     contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = image_meshing(
         vertex, vertex_full, tri_full, projected_vertex_full, projected_vertexm_full, fR, T, roi_box, pitch, yaw,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
-        new_img, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
+        height, width, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
 
     bg_vertex_src = np.hstack(contlist_src)
     all_vertex_src = np.hstack([bg_vertex_src, projected_vertex_full])
@@ -115,11 +115,9 @@ def generate_profile_faces(delta_poses, fit_result, image, face_models, return_c
         Pose_Para_src = np.array([pitch, yaw, roll]+list(t3d)+[f])
         Pose_Para_ref = np.array([pitch_ref, yaw_ref, roll_ref] + list(t3d_ref) + [f])
 
-        [contlist_ref, t3d_ref] = ImageRotation(contlist_src, bg_tri, vertex_full,
-                                                face_models['keypointsfull_contour'],
-                                                face_models['parallelfull_contour'],
-                                                Pose_Para_src, Pose_Para_ref,
-                                                RefVertex, fR, T, roi_box)
+        contlist_ref = image_rotation(contlist_src, bg_tri, vertex_full, face_models['keypointsfull_contour'],
+                                      face_models['parallelfull_contour'], Pose_Para_src, Pose_Para_ref,
+                                      RefVertex, fR, T, roi_box)
 
         bg_vertex_ref = np.hstack(contlist_ref)
         all_vertex_ref = np.hstack([bg_vertex_ref, RefVertex])

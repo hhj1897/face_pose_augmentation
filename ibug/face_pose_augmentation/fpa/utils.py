@@ -3,7 +3,7 @@ import numpy as np
 from copy import deepcopy
 from scipy.spatial import Delaunay
 from collections import defaultdict
-from typing import Dict, Tuple, Sequence
+from typing import Dict, Tuple, Sequence, List
 
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
@@ -13,7 +13,8 @@ __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
            'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
            'get_valid_internal_triangles', 'adjust_anchors_z', 'adjust_rotated_anchors', 'back_project_shape',
-           'image_meshing', 'create_rotated_correspondence_map', 'remap_image', 'calc_barycentric_coordinates']
+           'image_meshing', 'image_rotation', 'create_rotated_correspondence_map', 'remap_image',
+           'calc_barycentric_coordinates']
 
 
 def precompute_conn_point(tri: np.ndarray, model_completion: Dict) -> Dict:
@@ -191,9 +192,9 @@ def project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbo
     return vertex
 
 
-def parse_pose_parameters(pose_params: np.ndarray) -> Tuple[float, float, float, np.ndarray, float]:
+def parse_pose_parameters(pose_params: Sequence[float]) -> Tuple[float, float, float, np.ndarray, float]:
     phi, gamma, theta = pose_params[:3]
-    t3d = pose_params[3:6]
+    t3d = np.array(pose_params[3:6])
     f = pose_params[-1]
 
     return phi, gamma, theta, t3d, f
@@ -310,7 +311,7 @@ def get_valid_internal_triangles(cont_ver: np.ndarray, tri: np.ndarray) -> np.nd
 
 
 def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
-                     adjust_bin: np.ndarray, tri: np.ndarray) -> np.ndarray:
+                     adjust_bin: np.ndarray, bg_tri: np.ndarray) -> np.ndarray:
     # Solve the equation Y = AX only for z coordinates
     y_equ = []
     a_equ = []
@@ -319,10 +320,10 @@ def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
     adjust_ind = np.where(adjust_bin)[0]
     for pt in adjust_ind:
         # find the corresponding tri
-        tmp_bin = np.any(tri == pt, axis=0)
+        tmp_bin = np.any(bg_tri == pt, axis=0)
 
         # find connecting point
-        temp = tri[:, tmp_bin]
+        temp = bg_tri[:, tmp_bin]
         connect = np.unique(temp)
         connect = connect[connect != pt]
         for pt_con in connect:
@@ -442,25 +443,24 @@ def back_project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, ro
     scale_y = (ey - sy) / std_size
     s = (scale_x + scale_y) / 2
 
-    vertex[2, :] /= s
-    vertex[0, :] = (vertex[0, :] - sx)/scale_x
-    vertex[1, :] = (vertex[1, :] - sy)/scale_y  
-
-    vertex[1, :] = std_size + 1 - vertex[1, :]
-
+    vertex = np.vstack(((vertex[0, :] - sx) / scale_x,
+                        std_size + 1 - (vertex[1, :] - sy) / scale_y,
+                        vertex[2, :] / s))
     vertex = np.linalg.inv(f_rot).dot((vertex - tr))
     
     return vertex
 
 
-def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, projected_vertextm_full, f_rot, tr,
-                  roi_bbox, pitch, yaw, keypoints, keypointsfull_contour, parallelfull_contour, img, layer_widths,
-                  eliminate_inner_tri=False):
+def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndarray,
+                  projected_vertext_full: np.ndarray, projected_vertextm_full: np.ndarray,
+                  f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray, pitch: float, yaw: float,
+                  keypoints: Sequence[int], keypointsfull_contour: np.ndarray,
+                  parallelfull_contour: Sequence[np.ndarray], im_height: int, im_width: int,
+                  layer_widths: Sequence[float], eliminate_inner_tri: bool = False) \
+        -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int]:
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
     # The layers are set between face contour and bbox
-    im_height, im_width = img.shape[:2]
-
     contlist = []
     bboxlist = []
 
@@ -472,7 +472,6 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
     face_contour_ind = refine_contour_points(pitch, yaw, vertex_full, parallelfull_contour,
                                              keypointsfull_contour, face_contour_modify)
     face_contour = projected_vertext_full[:, face_contour_ind]
-
     contlist.append(face_contour)
     tl = np.min(face_contour, axis=1)
     br = np.max(face_contour, axis=1)
@@ -510,14 +509,14 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
 
     # Triangulation
     contour_all = np.hstack(contlist)
-    tri_all = Delaunay(contour_all.T[:, :2]).simplices.T
+    bg_tri_all = Delaunay(contour_all.T[:, :2]).simplices.T
 
     # further judge the internal triangles, since there maybe concave tri
     if eliminate_inner_tri:
-        inbin = np.all(tri_all < contlist[0].shape[1], axis=0)
-        tri_inner = tri_all[:, inbin]
+        inbin = np.all(bg_tri_all < contlist[0].shape[1], axis=0)
+        tri_inner = bg_tri_all[:, inbin]
         valid_inner_tri = get_valid_internal_triangles(contlist[0], tri_inner)
-        tri_all = np.hstack([tri_all[:, np.logical_not(inbin)], tri_inner[:, valid_inner_tri]])
+        bg_tri_all = np.hstack([bg_tri_all[:, np.logical_not(inbin)], tri_inner[:, valid_inner_tri]])
 
     # Now we need to determine the z coordinates of each contour point
     # Following the two considerations
@@ -527,8 +526,8 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
     # Assign proper z coordinates to image contour points
     for idx in range(contour_all.shape[1] - contlist[-1].shape[1], contour_all.shape[1]):
         # find the related triangle
-        tmp_bin = np.any(tri_all == idx, axis=0)
-        conn_tri = tri_all[:, tmp_bin]
+        tmp_bin = np.any(bg_tri_all == idx, axis=0)
+        conn_tri = bg_tri_all[:, tmp_bin]
         conn_point = np.unique(conn_tri)
         conn_face_contour_ind = [x for x in conn_point if x < contour_all.shape[1] - contlist[-1].shape[1]]
 
@@ -545,8 +544,8 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
         invalid_pts_set = set(invalid_pts)
         for idx in invalid_pts:
             # find the related triangle
-            tmp_bin = np.any(tri_all == idx, axis=0)
-            conn_tri = tri_all[:, tmp_bin]
+            tmp_bin = np.any(bg_tri_all == idx, axis=0)
+            conn_tri = bg_tri_all[:, tmp_bin]
             conn_point = np.unique(conn_tri)
             conn_face_contour_ind = list(set(conn_point).difference(invalid_pts_set))
 
@@ -560,8 +559,7 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
     depth_ref, tri_ind = z_buffer(projected_vertext_full, tri_full, projected_vertextm_full[2, :][:, np.newaxis],
                                   np.zeros((im_height, im_width, 1)))
     depth_ref = depth_ref.squeeze(axis=-1)
-    solid_depth_bin_list = [np.zeros(item.shape[1], dtype=bool) if idx > 0 else
-                            np.ones(item.shape[1], dtype=bool) for idx, item in enumerate(contlist)]
+    solid_depth_bin_list = [np.full(item.shape[1], idx <= 0, dtype=bool) for idx, item in enumerate(contlist)]
     for idx in list(range(3, 14)) + list(range(18, 29)):
         count = 0
         for contour in contlist[1: -1]:
@@ -579,83 +577,66 @@ def image_meshing(vertex, vertex_full, tri_full, projected_vertext_full, project
 
     # Finally refine non_solid contour
     counter = 0
-    contour_all_new = adjust_anchors_z(contour_all_new, contour_all, np.logical_not(solid_depth_bin), tri_all)
+    contour_all_new = adjust_anchors_z(contour_all_new, contour_all, np.logical_not(solid_depth_bin), bg_tri_all)
     for idx, contour in enumerate(contlist):
         contlist[idx] = contour_all_new[:, counter: counter + contour.shape[1]]
         counter += contour.shape[1]
 
-    return contlist, tri_all, face_contour_ind, wp_num, hp_num
+    return contlist, bg_tri_all, face_contour_ind, wp_num, hp_num
 
 
-def ImageRotation(contlist_src, bg_tri, vertex, face_contour_ind,
-                  isoline_face_contour, pose_params_src, pose_params_ref,
-                  projected_vertex_ref, f_rot, tr, roi_box):
+def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, vertex: np.ndarray,
+                   face_contour_ind: np.ndarray, isoline_face_contour: Sequence[np.ndarray],
+                   pose_params_src: Sequence[float], pose_params_ref: Sequence[float],
+                   projected_vertex_ref: np.ndarray, f_rot: np.ndarray, tr: np.ndarray,
+                   roi_box: np.ndarray) -> List[np.ndarray]:
     _, yaw, _, _, f = parse_pose_parameters(pose_params_src)
     pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = parse_pose_parameters(pose_params_ref)
+    all_bg_vertex_src = np.hstack(contlist_src)
 
-    all_vertex = np.hstack(contlist_src)
-    all_vertex_src = deepcopy(all_vertex)
+    # 1. get the preliminary position on the ref frame
+    all_bg_vertex_ref = project_shape(back_project_shape(all_bg_vertex_src, f_rot, tr, roi_box),
+                                      f * make_rotation_matrix(pitch_ref, yaw_ref, roll_ref),
+                                      t3d_ref[:, np.newaxis], roi_box)
 
-    # 1. get the preliminary position on the ref frame    
-    all_vertex_ref = back_project_shape(all_vertex, f_rot, tr, roi_box)
-    # Go to the reference position
-    R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
-    all_vertex_ref = project_shape(all_vertex_ref, f*R_ref, t3d_ref[:,np.newaxis], roi_box)
-    
     # 2. Landmark marching 
     if yaw_ref < 0:
         face_contour_modify = list(range(8)) + list(range(24, 30))
     else:
         face_contour_modify = list(range(9, 23))
-
     adjust_ind = list(range(3, 14)) + list(range(18, 29))
     yaw_base = min(yaw, -np.finfo(float).eps) if yaw_ref < 0 else max(0.0, yaw)
     yaw_delta = yaw_ref - yaw_base
     yaw_temp = yaw_base + yaw_delta / 2.5
-
     face_contour_ind = refine_contour_points(pitch_ref, yaw_temp, vertex, isoline_face_contour,
                                              face_contour_ind, face_contour_modify)
     face_contour_ind2 = refine_contour_points(pitch_ref, yaw_base, vertex, isoline_face_contour,
                                               face_contour_ind, face_contour_modify)
     face_contour_ind[adjust_ind] = face_contour_ind2[adjust_ind]
     face_contour_ref = projected_vertex_ref[:, face_contour_ind]
-    all_vertex_adjust = np.zeros(all_vertex_ref.shape)
+    all_vertex_adjust = np.zeros(all_bg_vertex_ref.shape)
     all_vertex_adjust[:, :face_contour_ref.shape[1]] = face_contour_ref
 
-    # 5. Rotate other img contour
-    # favor relationships on src
-    src_seq = deepcopy(face_contour_modify)
-    # face relationships on ref
-    ref_seq = sorted(list(set(range(len(face_contour_ind))).difference(set(src_seq))))
-    # 1 for solid anchor; 2 for src anchor; 3 for ref anchor
-    anchor_flags = []
-
-    for i in range(len(contlist_src)):
-        flags = np.zeros(contlist_src[i].shape[1])
-        if i == 0:
-            # the face contour, all are solid anchors
-            flags[:] = 1
-        elif i == len(contlist_src)-1:
-            # the image contour, all are src anchors
-            flags[:] = 2
-        else:
-            # middle points
-            flags[src_seq] = 2
-            flags[ref_seq] = 3
-
-        anchor_flags.append(flags)
+    # 3. Rotate other img contour
+    # 1) face contour points are all solid anchors (flag = 1)
+    # 2) middles points could either be src anchors (flag = 2) or ref anchors (flag = 3)
+    # 3) image contour points are all src anchors (flag = 2)
+    anchor_flags = [np.full(item.shape[1], 2 if idx > 0 else 1, dtype=int) for idx, item in enumerate(contlist_src)]
+    face_contour_modify_ref = [x for x in range(len(face_contour_ind)) if x not in face_contour_modify]
+    for flags in anchor_flags[1:-1]:
+        flags[face_contour_modify] = 2
+        flags[face_contour_modify_ref] = 3
     anchor_flags = np.hstack(anchor_flags)
-
     all_vertex_adjust = adjust_rotated_anchors(
-        all_vertex_src, all_vertex_ref, all_vertex_adjust, bg_tri, anchor_flags)
+        all_bg_vertex_src, all_bg_vertex_ref, all_vertex_adjust, bg_tri, anchor_flags)
 
     counter = 0
     contlist_ref = []
-    for i, item in enumerate(contlist_src):
-        contlist_ref.append(all_vertex_adjust[:, counter:counter+item.shape[1]])
-        counter += item.shape[1]  
+    for contour in contlist_src:
+        contlist_ref.append(all_vertex_adjust[:, counter: counter + contour.shape[1]])
+        counter += contour.shape[1]
 
-    return contlist_ref, t3d_ref
+    return contlist_ref
 
 
 def create_rotated_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray,
