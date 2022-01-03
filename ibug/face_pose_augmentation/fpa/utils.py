@@ -3,7 +3,7 @@ import numpy as np
 from copy import deepcopy
 from scipy.spatial import Delaunay
 from collections import defaultdict
-from typing import Dict, Tuple, Sequence, List
+from typing import Dict, Tuple, Sequence, Optional, Union, List
 
 from . import pyFaceFrontalization as pyFF
 from . import pyMM3D as pyMM
@@ -200,30 +200,30 @@ def parse_pose_parameters(pose_params: Sequence[float]) -> Tuple[float, float, f
     return phi, gamma, theta, t3d, f
 
 
-def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, texture: np.ndarray,
-             img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    height, width, num_channels = img_src.shape
+def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, im_height: int,
+             num_channels: int = 0, texture: Optional[np.ndarray] = None,
+             img_src: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
 
     return pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
                         np.ascontiguousarray(tri.astype(np.int32)),
-                        np.ascontiguousarray(texture.astype(np.float64)),
-                        np.ascontiguousarray(img_src.astype(np.float64)),
-                        num_vertices, num_triangles, width, height, num_channels)
+                        None if texture is None else np.ascontiguousarray(texture.astype(np.float64)),
+                        None if img_src is None else np.ascontiguousarray(img_src.astype(np.float64)),
+                        num_vertices, num_triangles, im_width, im_height, num_channels)
 
 
-def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, texture_tri: np.ndarray,
-                 img_src: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    height, width, num_channels = img_src.shape
+def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, im_height: int,
+                 num_channels: int = 0, texture_tri: Optional[np.ndarray] = None,
+                 img_src: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Union[np.ndarray, None]]:
     num_vertices = projected_vertex.shape[1]
     num_triangles = tri.shape[1]
     
     return pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
                            np.ascontiguousarray(tri.astype(np.int32)),
-                           np.ascontiguousarray(texture_tri.astype(np.float64)),
-                           np.ascontiguousarray(img_src.astype(np.float64)),
-                           num_vertices, num_triangles, width, height, num_channels)
+                           None if texture_tri is None else np.ascontiguousarray(texture_tri.astype(np.float64)),
+                           None if img_src is None else np.ascontiguousarray(img_src.astype(np.float64)),
+                           num_vertices, num_triangles, im_width, im_height, num_channels)
 
 
 def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines: Sequence[np.ndarray],
@@ -455,7 +455,7 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
                   projected_vertext_full: np.ndarray, projected_vertextm_full: np.ndarray,
                   f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray, pitch: float, yaw: float,
                   keypoints: Sequence[int], keypointsfull_contour: np.ndarray,
-                  parallelfull_contour: Sequence[np.ndarray], im_height: int, im_width: int,
+                  parallelfull_contour: Sequence[np.ndarray], im_width: int, im_height: int,
                   layer_widths: Sequence[float], eliminate_inner_tri: bool = False) \
         -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int]:
     # We will mark a set of points to help triangulation the whole image
@@ -556,10 +556,10 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
                        contour_all.shape[1] - contlist[-1].shape[1])
 
     # Refine the anchor depth with real depth
-    depth_ref, tri_ind = z_buffer(projected_vertext_full, tri_full, projected_vertextm_full[2, :][:, np.newaxis],
-                                  np.zeros((im_height, im_width, 1)))
+    tri_ind, depth_ref = z_buffer(projected_vertext_full, tri_full, im_width, im_height, 1,
+                                  projected_vertextm_full[2, :][:, np.newaxis], np.zeros((im_height, im_width, 1)))
     depth_ref = depth_ref.squeeze(axis=-1)
-    solid_depth_bin_list = [np.full(item.shape[1], idx <= 0, dtype=bool) for idx, item in enumerate(contlist)]
+    solid_depth_bin_list = [np.full(item.shape[1], idx == 0, dtype=bool) for idx, item in enumerate(contlist)]
     for idx in list(range(3, 14)) + list(range(18, 29)):
         count = 0
         for contour in contlist[1: -1]:
@@ -655,10 +655,10 @@ def create_rotated_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.nd
 
 
 def remap_image(img: np.ndarray, corres_map: np.ndarray) -> np.ndarray:
-    height, width, num_channels = img.shape
-    return pyFF.pyFaceFrontalizationFilling(np.ascontiguousarray(img.astype(np.float64)),
-                                            width, height, num_channels,
-                                            np.ascontiguousarray(corres_map.astype(np.float64)))
+    im_height, im_width, num_channels = img.shape
+    return pyFF.pyFaceFrontalizationFilling(
+        np.ascontiguousarray(img.astype(np.float64)), im_width, im_height, num_channels,
+        np.ascontiguousarray(corres_map.astype(np.float64))).astype(img.dtype)
 
 
 def calc_barycentric_coordinates(pt: np.ndarray, vertices: np.ndarray, tri_list: np.ndarray) -> np.ndarray:

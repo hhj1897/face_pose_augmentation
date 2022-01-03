@@ -13,7 +13,10 @@ void MM3D::ZBuffer(const double *vertex, const long *tri, const double *texture,
         imgh[i] = -1.0e15;
         tri_ind[i] = -1;
     }
-    memcpy(img, src_img, width * height * nChannels * sizeof(double));
+    if(src_img != NULL && img != NULL)
+    {
+        memcpy(img, src_img, width * height * nChannels * sizeof(double));
+    }
 
     double coords[3] = {0.0, 0.0, 0.0};
     for(int i = 0; i < ntri; ++i)
@@ -52,10 +55,13 @@ void MM3D::ZBuffer(const double *vertex, const long *tri, const double *texture,
                     if(imgh[y * width + x] < z)
                     {
                         imgh[y * width + x] = z;
-                        for(int j = 0; j < nChannels; ++j)
+                        if(texture != NULL && img != NULL)
                         {
-                            img[(y * width + x) * nChannels + j] =
-                                coords[0] * t1[j] + coords[1] * t2[j] + coords[2] * t3[j];
+                            for(int j = 0; j < nChannels; ++j)
+                            {
+                                img[(y * width + x) * nChannels + j] =
+                                    coords[0] * t1[j] + coords[1] * t2[j] + coords[2] * t3[j];
+                            }
                         }
                         tri_ind[y * width + x] = i;
                     }
@@ -76,7 +82,10 @@ void MM3D::ZBufferTri(const double *vertex, const long *tri, const double *textu
         imgh[i] = -1.0e15;
         tri_ind[i] = -1;
     }
-    memcpy(img, src_img, width * height * nChannels * sizeof(double));
+    if(src_img != NULL && img != NULL)
+    {
+        memcpy(img, src_img, width * height * nChannels * sizeof(double));
+    }
 
     double coords[3] = {0.0, 0.0, 0.0};
     for(int i = 0; i < ntri; ++i)
@@ -107,9 +116,12 @@ void MM3D::ZBufferTri(const double *vertex, const long *tri, const double *textu
                     if(imgh[y * width + x] < z)
                     {
                         imgh[y * width + x] = z;
-                        for(int j = 0; j < nChannels; ++j)
+                        if(texture_tri != NULL && img != NULL)
                         {
-                            img[(y * width + x) * nChannels + j] =  texture_tri[nChannels * i + j];
+                            for(int j = 0; j < nChannels; ++j)
+                            {
+                                img[(y * width + x) * nChannels + j] =  texture_tri[nChannels * i + j];
+                            }
                         }
                         tri_ind[y * width + x] = i;
                     }
