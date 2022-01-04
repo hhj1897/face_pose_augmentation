@@ -1,6 +1,5 @@
 import math
 import numpy as np
-from copy import deepcopy
 from scipy.spatial import Delaunay
 from collections import defaultdict
 from typing import Dict, Tuple, Sequence, Optional, Union, List
@@ -13,7 +12,7 @@ __all__ = ['precompute_conn_point', 'make_rotation_matrix', 'align_points', 'fit
            'fit_model_with_valid_points', 'model_completion_bfm', 'project_shape', 'parse_pose_parameters',
            'z_buffer', 'z_buffer_tri', 'refine_contour_points', 'image_bbox_to_contour',
            'get_valid_internal_triangles', 'adjust_anchors_z', 'adjust_rotated_anchors', 'back_project_shape',
-           'image_meshing', 'image_rotation', 'create_rotated_correspondence_map', 'remap_image',
+           'image_meshing', 'image_rotation', 'create_correspondence_map', 'remap_image',
            'calc_barycentric_coordinates']
 
 
@@ -229,7 +228,7 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, i
 def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines: Sequence[np.ndarray],
                           contour_points: np.ndarray, contour_points_to_refine: Sequence[int]) -> np.ndarray:
     projected_vertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
-    contour_points = deepcopy(contour_points)
+    contour_points = contour_points.copy()
     for idx in contour_points_to_refine:
         selected = (np.argmin(projected_vertex[0, isolines[idx]]) if yaw < 0
                     else np.argmax(projected_vertex[0, isolines[idx]]))
@@ -348,7 +347,7 @@ def adjust_anchors_z(contour_all: np.ndarray, contour_all_ref: np.ndarray,
 
     # get the new position
     x_equ = np.linalg.lstsq(np.vstack(a_equ), np.array(y_equ), rcond=None)[0]
-    contour_all_z = deepcopy(contour_all)
+    contour_all_z = contour_all.copy()
     contour_all_z[2, adjust_ind] = x_equ.reshape(-1)
 
     return contour_all_z
@@ -639,8 +638,8 @@ def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, verte
     return contlist_ref
 
 
-def create_rotated_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray,
-                                      all_tri: np.ndarray) -> np.ndarray:
+def create_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.ndarray, all_vertex_ref: np.ndarray,
+                              all_tri: np.ndarray) -> np.ndarray:
     height, width = tri_ind.shape[:2]
     all_ver_length = all_vertex_src.shape[1]
     all_tri_length = all_tri.shape[1]

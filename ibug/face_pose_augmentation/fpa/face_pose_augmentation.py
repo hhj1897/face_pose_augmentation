@@ -6,7 +6,7 @@ from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
 from typing import Dict, Optional, Sequence, Tuple
 from .utils import (make_rotation_matrix, project_shape, image_meshing, image_rotation,
-                    create_rotated_correspondence_map, remap_image, model_completion_bfm,
+                    create_correspondence_map, remap_image, model_completion_bfm,
                     z_buffer_tri, calc_barycentric_coordinates)
 
 
@@ -23,14 +23,11 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
     # 1. Get fitting result from 3DDFA (vertex is without affine transform and image space transform)
     roi_box = fit_result['roi_box']
     vertex = fit_result['vertex']
-    f_rot, tr = fit_result['camera_transform']['fR'], fit_result['camera_transform']['T']
-    
-    yaw, pitch, roll = [fit_result['face_pose'][key] for key in ['yaw', 'pitch', 'roll']]
-    t3d, f = fit_result['face_pose']['t3d'], fit_result['face_pose']['f']
-
+    f_rot, tr = [fit_result['camera_transform'][key] for key in ('fR', 'T')]
+    yaw, pitch, roll = [fit_result['face_pose'][key] for key in ('yaw', 'pitch', 'roll')]
+    t3d, f = [fit_result['face_pose'][key] for key in ('t3d', 'f')]
     vertex_full, tri_full = model_completion_bfm(
         vertex, face_models['Model_FWH'], face_models['Model_Completion'], face_models['conn_point_info'])
-
     im_height, im_width = image.shape[:2]
 
     # apply camera rotation to the 3D mesh    
@@ -110,73 +107,51 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
     for pitch_delta, yaw_delta, roll_delta in delta_poses:
         # 3. Rotating and Anchor Adjustment
         pitch_ref = pitch + pitch_delta
-        yaw_ref   = yaw + yaw_delta
-        roll_ref  = roll + roll_delta
-        R_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
+        yaw_ref = yaw + yaw_delta
+        roll_ref = roll + roll_delta
+        rot_mat_ref = make_rotation_matrix(pitch_ref, yaw_ref, roll_ref)
+        t3d_ref = np.mean(f_rot.dot(vertex_full) + tr, axis=1) - np.mean(f * rot_mat_ref.dot(vertex_full), axis=1)
 
-        t3d_ref = np.mean(f_rot.dot(vertex_full)+tr, axis=1) - np.mean(f*R_ref.dot(vertex_full), axis=1)
-        RefVertex = project_shape(vertex_full, f*R_ref, t3d_ref[:, np.newaxis], roi_box)
-
-        Pose_Para_src = np.array([pitch, yaw, roll]+list(t3d)+[f])
-        Pose_Para_ref = np.array([pitch_ref, yaw_ref, roll_ref] + list(t3d_ref) + [f])
+        projected_vertex_ref = project_shape(vertex_full, f * rot_mat_ref, t3d_ref[:, np.newaxis], roi_box)
+        pose_params_src = [pitch, yaw, roll] + t3d.tolist() + [f]
+        pose_params_ref = [pitch_ref, yaw_ref, roll_ref] + t3d_ref.tolist() + [f]
 
         contlist_ref = image_rotation(contlist_src, bg_tri, vertex_full, face_models['keypointsfull_contour'],
-                                      face_models['parallelfull_contour'], Pose_Para_src, Pose_Para_ref,
-                                      RefVertex, f_rot, tr, roi_box)
+                                      face_models['parallelfull_contour'], pose_params_src, pose_params_ref,
+                                      projected_vertex_ref, f_rot, tr, roi_box)
 
         bg_vertex_ref = np.hstack(contlist_ref)
-        all_vertex_ref = np.hstack([bg_vertex_ref, RefVertex])
+        all_vertex_ref = np.hstack([bg_vertex_ref, projected_vertex_ref])
 
-        bg_tri_num = bg_tri.shape[1]
-        
         # Further adjust z
         if further_adjust_z:
             if yaw_ref < 0:
-                face_contour_modify = np.array(list(range(8)) + list(range(24, 30)))
+                face_contour_modify = list(range(8)) + list(range(24, 30))
             else:
-                face_contour_modify = np.array(range(9, 23))
-
-            face_contour_nonmodify = sorted(list(set(range(len(
-                face_models['keypointsfull_contour']))).difference(set(face_contour_modify)))) 
-
-            zmax_bin = []
-            for i in range(len(contlist_ref)-1): 
-                cont = contlist_ref[i]
-                tmp_bin = np.zeros(cont.shape[1])
-                tmp_bin[face_contour_nonmodify] = 1
-                zmax_bin.append(tmp_bin)
-
-            zmax_bin.append(np.zeros(contlist_ref[-1].shape[1]))
-            zmax_bin = np.hstack(zmax_bin)
-            zmax_ind = np.where(zmax_bin==1)[0]
-
-            tmp_bin = np.in1d(bg_tri.ravel(), zmax_ind).reshape((3,-1))
-            tmp_bin = np.any(tmp_bin, axis=0)
-            zmax_ind = np.unique(bg_tri[:,tmp_bin])
+                face_contour_modify = list(range(9, 23))
+            face_contour_no_modify = list(
+                set(range(len(face_models['keypointsfull_contour']))).difference(set(face_contour_modify)))
+            zmax_bins = [np.zeros(contour.shape[1], dtype=bool) for contour in contlist_ref]
+            for bins, contour in zip(zmax_bins[:-1], contlist_ref[:-1]):
+                bins[face_contour_no_modify] = True
+            zmax_bins = np.hstack(zmax_bins)
+            tri_ind = [idx for idx, tri in enumerate(bg_tri.T) if np.any(zmax_bins[tri])]
+            zmax_ind = np.unique(bg_tri[:, tri_ind])
             all_vertex_ref[2, zmax_ind] = all_vertex_ref[2].max()
 
         # 4. Get Correspondence
         tri_ind = z_buffer_tri(all_vertex_ref, all_tri, im_width, im_height)[0]
-        corres_map = create_rotated_correspondence_map(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
-        if yaw_delta < 0:
-            pts = np.vstack(([corres_map.shape[1], -1], 
-                             contlist_ref[-1][:2, wp_num + 1: wp_num + hp_num + 3].T - 1,
-                             [corres_map.shape[1], corres_map.shape[0]]))
-            masked = corres_map[..., 0].copy()
-            cv2.fillPoly(masked, [pts.astype(np.int32)], -1.0)
-            corres_map[..., 0] = masked
-            masked = corres_map[..., 1].copy()
-            cv2.fillPoly(masked, [pts.astype(np.int32)], -1.0)
-            corres_map[..., 1] = masked
-        elif yaw_delta > 0:
-            pts = np.vstack(([-1, corres_map.shape[0]], contlist_ref[-1][:2, -hp_num - 1:].T,
-                             contlist_ref[-1][:2, 0].T, [-1, -1]))
-            masked = corres_map[..., 0].copy()
-            cv2.fillPoly(masked, [pts.astype(np.int32)], -1.0)
-            corres_map[..., 0] = masked
-            masked = corres_map[..., 1].copy()
-            cv2.fillPoly(masked, [pts.astype(np.int32)], -1.0)
-            corres_map[..., 1] = masked
+        corres_map = create_correspondence_map(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
+        if yaw_delta != 0:
+            if yaw_delta < 0:
+                pts = np.vstack(([corres_map.shape[1], -1],
+                                 contlist_ref[-1][:2, wp_num + 1: wp_num + hp_num + 3].T - 1,
+                                 [corres_map.shape[1], corres_map.shape[0]])).astype(np.int32)
+            else:
+                pts = np.vstack(([-1, corres_map.shape[0]], contlist_ref[-1][:2, -hp_num - 1:].T,
+                                 contlist_ref[-1][:2, 0].T, [-1, -1])).astype(np.int32)
+            corres_map[..., 0] = cv2.fillPoly(np.ascontiguousarray(corres_map[..., 0]), [pts], -1.0)
+            corres_map[..., 1] = cv2.fillPoly(np.ascontiguousarray(corres_map[..., 1]), [pts], -1.0)
         if return_corres_map:
             maps_or_images.append(corres_map)
         else:
@@ -184,8 +159,8 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
 
         # get the landmarks
         if landmarks is not None:
-            warped_landmarks.append((all_vertex_ref[:, face_models['keypoints']+bg_vertex_src.shape[1]],
-                                     all_vertex_ref[:, face_models['keypoints']+bg_vertex_src.shape[1]].copy()))
+            warped_landmarks.append((all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]],
+                                     all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]].copy()))
             for idx, (tri_idx, pt_barycentric) in matching_triangles.items():
                 a = all_vertex_ref[:, all_tri[0, tri_idx]]
                 b = all_vertex_ref[:, all_tri[1, tri_idx]]
@@ -193,16 +168,17 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
                 warped_landmarks[-1][-1][:, idx] = (a * pt_barycentric[0] + b * pt_barycentric[1] +
                                                     c * pt_barycentric[2])
         else:
-            warped_landmarks.append(all_vertex_ref[:, face_models['keypoints']+bg_vertex_src.shape[1]])
+            warped_landmarks.append(all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]])
     
     return np.stack(maps_or_images), np.stack(warped_landmarks)
 
 
 def generate_profile_face(pitch_delta: float, yaw_delta: float, roll_delta: float,
                           fit_result: Dict, image: np.ndarray, face_models: Dict,
-                          return_corres_map: bool = False, landmarks: Optional[np.ndarray] = None,
+                          return_corres_map: bool = False, further_adjust_z: bool = False,
+                          landmarks: Optional[np.ndarray] = None,
                           mouth_point_indices: Sequence[int] = range(48, 68)) -> Tuple[np.ndarray, np.ndarray]:
     map_or_image, warped_landmarks = generate_profile_faces(np.array([(pitch_delta, yaw_delta, roll_delta)]),
                                                             fit_result, image, face_models, return_corres_map,
-                                                            landmarks, mouth_point_indices)
+                                                            further_adjust_z, landmarks, mouth_point_indices)
     return map_or_image[0], warped_landmarks[0]
