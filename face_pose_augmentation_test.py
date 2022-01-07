@@ -116,8 +116,10 @@ def main() -> None:
                     print(tddfa_results[selected_face_idx]['face_pose']['pitch'],
                           tddfa_results[selected_face_idx]['face_pose']['yaw'])
                     augmentation_result = augmentor(frame, tddfa_results[selected_face_idx],
-                                                    np.array([40.0, -45.0, 0.0]) / 180.0 * np.pi)
+                                                    np.array([40.0, -45.0, 25.0]) / 180.0 * np.pi)
+                                                    # landmarks[selected_face_idx])
                     frame = augmentation_result['warped_image']
+                    plot_landmarks(frame, augmentation_result['warped_landmarks'][:2].T)
                 current_time = time.time()
                 elapsed_time3 = current_time - start_time
 

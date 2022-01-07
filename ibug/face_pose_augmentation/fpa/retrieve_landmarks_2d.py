@@ -3,6 +3,9 @@ from copy import deepcopy
 from .utils import make_rotation_matrix, project_shape
 
 
+__all__ = ['landmark_marching', 'retrieve_contour_landmark', 'retrieve_contour_landmark_aug']
+
+
 def landmark_marching(pitch, yaw, roll, vertex, isoline, keypoints):  
     ProjectVertex = np.dot(make_rotation_matrix(pitch, yaw, roll), vertex)
     ProjectVertex = ProjectVertex - np.min(ProjectVertex, axis=1)[:, np.newaxis] + 1

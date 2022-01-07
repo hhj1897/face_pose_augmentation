@@ -142,16 +142,68 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
         # 4. Get Correspondence
         tri_ind = z_buffer_tri(all_vertex_ref, all_tri, im_width, im_height)[0]
         corres_map = create_correspondence_map(tri_ind, all_vertex_src, all_vertex_ref, all_tri)
-        if yaw_delta != 0:
-            if yaw_delta < 0:
-                pts = np.vstack(([corres_map.shape[1], -1],
-                                 contlist_ref[-1][:2, wp_num + 1: wp_num + hp_num + 3].T - 1,
-                                 [corres_map.shape[1], corres_map.shape[0]])).astype(np.int32)
+        if pitch_delta != 0 or yaw_delta != 0:
+            border_region = None
+            corres_map_diag = np.linalg.norm(corres_map.shape[:2])
+            enlarge_factor = ((corres_map_diag + 16.0) / min(corres_map.shape[:2]) - 1.0) / 2.0
+            enlarged_corres_map_corners = np.array([
+                [-corres_map.shape[1] * enlarge_factor, -corres_map.shape[0] * enlarge_factor],
+                [corres_map.shape[1] * (1.0 + enlarge_factor), -corres_map.shape[0] * enlarge_factor],
+                [corres_map.shape[1] * (1.0 + enlarge_factor), corres_map.shape[0] * (1.0 + enlarge_factor)],
+                [-corres_map.shape[1] * enlarge_factor, corres_map.shape[0] * (1.0 + enlarge_factor)]])
+            corres_map_centre = np.array(corres_map.shape[1::-1]) / 2.0
+            enlarged_corres_map_corners = (enlarged_corres_map_corners - corres_map_centre).dot(
+                np.array([[np.cos(roll_delta), -np.sin(roll_delta)],
+                          [np.sin(roll_delta), np.cos(roll_delta)]])) + corres_map_centre
+            border_tl, border_tr, border_br, border_bl = enlarged_corres_map_corners
+            img_contour_tl, img_contour_tr, img_contour_br, img_contour_bl = (
+                0, wp_num + 1, wp_num + hp_num + 2, wp_num * 2 + hp_num + 3)
+            if pitch_delta < 0:
+                if yaw_delta < 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_tr: img_contour_bl + 1].T - 1,
+                         border_bl, border_br, border_tr))).astype(np.int32)
+                elif yaw_delta > 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_br:].T - 1,
+                         contlist_ref[-1][:2, img_contour_tl].T - 1,
+                         border_tl, border_bl, border_br))).astype(np.int32)
+                else:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_br: img_contour_bl + 1].T - 1,
+                         border_bl, border_br))).astype(np.int32)
+            elif pitch_delta > 0:
+                if yaw_delta < 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_tl: img_contour_br + 1].T - 1,
+                         border_br, border_tr, border_tl))).astype(np.int32)
+                elif yaw_delta > 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_bl:].T - 1,
+                         contlist_ref[-1][:2, img_contour_tl: img_contour_tr + 1].T - 1,
+                         border_tr, border_tl, border_bl))).astype(np.int32)
+                else:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_tl: img_contour_tr + 1].T - 1,
+                         border_tr, border_tl))).astype(np.int32)
             else:
-                pts = np.vstack(([-1, corres_map.shape[0]], contlist_ref[-1][:2, -hp_num - 1:].T,
-                                 contlist_ref[-1][:2, 0].T, [-1, -1])).astype(np.int32)
-            corres_map[..., 0] = cv2.fillPoly(np.ascontiguousarray(corres_map[..., 0]), [pts], -1.0)
-            corres_map[..., 1] = cv2.fillPoly(np.ascontiguousarray(corres_map[..., 1]), [pts], -1.0)
+                if yaw_delta < 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_tr: img_contour_br + 1].T - 1,
+                         border_br, border_tr))).astype(np.int32)
+                elif yaw_delta > 0:
+                    border_region = np.floor(np.vstack(
+                        (contlist_ref[-1][:2, img_contour_bl:].T - 1,
+                         contlist_ref[-1][:2, img_contour_tl].T - 1,
+                         border_tl, border_bl))).astype(np.int32)
+            if border_region is not None:
+                corres_map_x = np.ascontiguousarray(corres_map[..., 0])
+                corres_map_y = np.ascontiguousarray(corres_map[..., 1])
+                for offset in [(0, 0), (0, 1), (1, 0), (1, 1)]:
+                    corres_map_x = cv2.fillPoly(corres_map_x, [border_region], -1.0, offset=offset)
+                    corres_map_y = cv2.fillPoly(corres_map_y, [border_region], -1.0, offset=offset)
+                corres_map[..., 0] = corres_map_x
+                corres_map[..., 1] = corres_map_y
         if return_corres_map:
             maps_or_images.append(corres_map)
         else:

@@ -79,6 +79,7 @@ class FacePoseAugmentor(object):
                                                                  self.fpa_models, True, landmarks=landmarks)):
                     result = dict()
                     result['correspondence_map'] = corr_map
+                    result['warped_landmarks'] = lms
                     if warp_image:
                         result['warped_image'] = cv2.remap(image, corr_map[..., 0].astype(np.float32),
                                                            corr_map[..., 1].astype(np.float32),
