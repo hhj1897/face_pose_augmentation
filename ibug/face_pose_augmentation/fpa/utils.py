@@ -227,11 +227,17 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, i
 
 def refine_contour_points(pitch: float, yaw: float, vertex: np.ndarray, isolines: Sequence[np.ndarray],
                           contour_points: np.ndarray, contour_points_to_refine: Sequence[int]) -> np.ndarray:
-    projected_vertex = np.dot(make_rotation_matrix(pitch, yaw, 0), vertex)
+    rot_mat = make_rotation_matrix(pitch, yaw, 0)
+    if pitch != 0 and yaw != 0:
+        sin_angle, cos_angle = math.sin(pitch) * math.sin(yaw), math.cos(pitch)
+        norm = (sin_angle ** 2 + cos_angle ** 2) ** 0.5
+        sin_angle, cos_angle = sin_angle / norm, cos_angle / norm
+        rot_mat = np.array([[cos_angle, -sin_angle, 0],
+                            [sin_angle, cos_angle, 0]]).dot(rot_mat)
     contour_points = contour_points.copy()
     for idx in contour_points_to_refine:
-        selected = (np.argmin(projected_vertex[0, isolines[idx]]) if yaw < 0
-                    else np.argmax(projected_vertex[0, isolines[idx]]))
+        projected_isoline_vertex = rot_mat[0].dot(vertex[:, isolines[idx]])
+        selected = np.argmin(projected_isoline_vertex) if yaw < 0 else np.argmax(projected_isoline_vertex)
         contour_points[idx] = isolines[idx][selected]
 
     return contour_points
@@ -450,10 +456,9 @@ def back_project_shape(vertex: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, ro
     return vertex
 
 
-def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndarray,
-                  projected_vertext_full: np.ndarray, projected_vertextm_full: np.ndarray,
-                  f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray, pitch: float, yaw: float,
-                  keypoints: Sequence[int], keypointsfull_contour: np.ndarray,
+def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_vertex_full: np.ndarray,
+                  projected_vertexm_full: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray,
+                  pitch: float, yaw: float, keypoints: Sequence[int], keypointsfull_contour: np.ndarray,
                   parallelfull_contour: Sequence[np.ndarray], im_width: int, im_height: int,
                   layer_widths: Sequence[float], eliminate_inner_tri: bool = False) \
         -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int]:
@@ -470,7 +475,7 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
         face_contour_modify = list(range(9, 23))
     face_contour_ind = refine_contour_points(pitch, yaw, vertex_full, parallelfull_contour,
                                              keypointsfull_contour, face_contour_modify)
-    face_contour = projected_vertext_full[:, face_contour_ind]
+    face_contour = projected_vertex_full[:, face_contour_ind]
     contlist.append(face_contour)
     tl = np.min(face_contour, axis=1)
     br = np.max(face_contour, axis=1)
@@ -483,7 +488,7 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
     for lw in layer_widths:
         curlayer_width = 1 + lw
         contour = face_center[:, np.newaxis] + curlayer_width * (contour_base - face_center[:, np.newaxis])
-        t3d_cur = (1 - curlayer_width) * f_rot.dot(vertex[:, nose_tip][:, np.newaxis]) + tr
+        t3d_cur = (1 - curlayer_width) * f_rot.dot(vertex_full[:, nose_tip][:, np.newaxis]) + tr
         contour3d = project_shape(vertex_full[:, face_contour_ind], curlayer_width * f_rot, t3d_cur, roi_bbox)
         contour = np.vstack([contour, contour3d[2, :]])
         contlist.append(contour)
@@ -555,8 +560,8 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
                        contour_all.shape[1] - contlist[-1].shape[1])
 
     # Refine the anchor depth with real depth
-    tri_ind, depth_ref = z_buffer(projected_vertext_full, tri_full, im_width, im_height, 1,
-                                  projected_vertextm_full[2, :][:, np.newaxis], np.zeros((im_height, im_width, 1)))
+    tri_ind, depth_ref = z_buffer(projected_vertex_full, tri_full, im_width, im_height, 1,
+                                  projected_vertexm_full[2, :][:, np.newaxis], np.zeros((im_height, im_width, 1)))
     depth_ref = depth_ref.squeeze(axis=-1)
     solid_depth_bin_list = [np.full(item.shape[1], idx == 0, dtype=bool) for idx, item in enumerate(contlist)]
     for idx in list(range(3, 14)) + list(range(18, 29)):
@@ -584,7 +589,7 @@ def image_meshing(vertex: np.ndarray, vertex_full: np.ndarray, tri_full: np.ndar
     return contlist, bg_tri_all, face_contour_ind, wp_num, hp_num
 
 
-def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, vertex: np.ndarray,
+def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, vertex_full: np.ndarray,
                    face_contour_ind: np.ndarray, isoline_face_contour: Sequence[np.ndarray],
                    pose_params_src: Sequence[float], pose_params_ref: Sequence[float],
                    projected_vertex_ref: np.ndarray, f_rot: np.ndarray, tr: np.ndarray,
@@ -607,9 +612,9 @@ def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, verte
     yaw_base = min(yaw, -np.finfo(float).eps) if yaw_ref < 0 else max(0.0, yaw)
     yaw_delta = yaw_ref - yaw_base
     yaw_temp = yaw_base + yaw_delta / 2.5
-    face_contour_ind = refine_contour_points(pitch_ref, yaw_temp, vertex, isoline_face_contour,
+    face_contour_ind = refine_contour_points(pitch_ref, yaw_temp, vertex_full, isoline_face_contour,
                                              face_contour_ind, face_contour_modify)
-    face_contour_ind2 = refine_contour_points(pitch_ref, yaw_base, vertex, isoline_face_contour,
+    face_contour_ind2 = refine_contour_points(pitch_ref, yaw_base, vertex_full, isoline_face_contour,
                                               face_contour_ind, face_contour_modify)
     face_contour_ind[adjust_ind] = face_contour_ind2[adjust_ind]
     face_contour_ref = projected_vertex_ref[:, face_contour_ind]

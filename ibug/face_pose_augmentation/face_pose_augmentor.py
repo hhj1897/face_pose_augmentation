@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 from typing import Optional, Dict, Any, Union, List
 from .fpa import __file__ as fpa_init_file
 from .fpa.utils import precompute_conn_point, model_completion_bfm
-from .fpa import generate_profile_faces, retrieve_contour_landmark_aug
+from .fpa import generate_profile_faces
 
 
 __all__ = ['FacePoseAugmentor']

@@ -7,7 +7,7 @@ from shapely.geometry import Point, Polygon
 from typing import Dict, Optional, Sequence, Tuple
 from .utils import (make_rotation_matrix, project_shape, image_meshing, image_rotation,
                     create_correspondence_map, remap_image, model_completion_bfm,
-                    z_buffer_tri, calc_barycentric_coordinates)
+                    z_buffer_tri, calc_barycentric_coordinates, refine_contour_points)
 
 
 __all__ = ['generate_profile_faces', 'generate_profile_face']
@@ -31,17 +31,17 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
     im_height, im_width = image.shape[:2]
 
     # apply camera rotation to the 3D mesh    
-    projected_vertex_full = project_shape(vertex_full, f_rot, tr, roi_box)
-    projected_vertexm_full = project_shape(face_models['vertexm_full'], f_rot, tr, roi_box)
+    projected_vertex_src = project_shape(vertex_full, f_rot, tr, roi_box)
+    projected_vertexm_src = project_shape(face_models['vertexm_full'], f_rot, tr, roi_box)
 
     # 2. Image Meshing
     contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = image_meshing(
-        vertex, vertex_full, tri_full, projected_vertex_full, projected_vertexm_full, f_rot, tr, roi_box, pitch, yaw,
+        vertex_full, tri_full, projected_vertex_src, projected_vertexm_src, f_rot, tr, roi_box, pitch, yaw,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
         im_width, im_height, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
 
     bg_vertex_src = np.hstack(contlist_src)
-    all_vertex_src = np.hstack([bg_vertex_src, projected_vertex_full])
+    all_vertex_src = np.hstack([bg_vertex_src, projected_vertex_src])
     all_tri = np.hstack([bg_tri, tri_full + bg_vertex_src.shape[1]])
     bg_tri_alt = bg_tri.copy()
     for idx, vt in enumerate(face_contour_ind):
@@ -209,19 +209,31 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
         else:
             maps_or_images.append(remap_image(image, corres_map))
 
-        # get the landmarks
+        # get 3d style landmarks
+        landmarks_3d = projected_vertex_ref[:, face_models['keypoints']]
+
+        # get 2d style landmarks (by adjusting the contour points)
+        landmarks_2d = landmarks_3d.copy()
+        if yaw < 0:
+            jaw_points_modify = list(range(8))
+        else:
+            jaw_points_modify = list(range(9, 17))
+        jaw_points_ind = refine_contour_points(pitch_ref, yaw_ref, vertex, face_models['parallel_contour'],
+                                               face_models['keypoints_contour'], jaw_points_modify)
+        landmarks_2d[:, :len(jaw_points_ind)] = projected_vertex_ref[:, jaw_points_ind]
+
+        # get extract landmarks
         if landmarks is not None:
-            warped_landmarks.append((all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]],
-                                     all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]].copy()))
+            landmarks_exact = landmarks_3d.copy()
             for idx, (tri_idx, pt_barycentric) in matching_triangles.items():
                 a = all_vertex_ref[:, all_tri[0, tri_idx]]
                 b = all_vertex_ref[:, all_tri[1, tri_idx]]
                 c = all_vertex_ref[:, all_tri[2, tri_idx]]
-                warped_landmarks[-1][-1][:, idx] = (a * pt_barycentric[0] + b * pt_barycentric[1] +
-                                                    c * pt_barycentric[2])
+                landmarks_exact[:, idx] = (a * pt_barycentric[0] + b * pt_barycentric[1] + c * pt_barycentric[2])
+            warped_landmarks.append(np.stack([landmarks_3d, landmarks_2d, landmarks_exact]))
         else:
-            warped_landmarks.append(all_vertex_ref[:, face_models['keypoints'] + bg_vertex_src.shape[1]])
-    
+            warped_landmarks.append(np.stack([landmarks_3d, landmarks_2d]))
+
     return np.stack(maps_or_images), np.stack(warped_landmarks)
 
 
