@@ -5,6 +5,7 @@ import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
 from typing import Dict, Optional, Sequence, Tuple
+from pygeodesic.geodesic import PyGeodesicAlgorithmExact
 from .utils import (make_rotation_matrix, project_shape, image_meshing, image_rotation,
                     create_correspondence_map, remap_image, model_completion_bfm,
                     z_buffer_tri, calc_barycentric_coordinates, refine_contour_points)
@@ -60,46 +61,61 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
         face_graph_weights = np.linalg.norm(all_vertex_src.T[[x[0] for x in face_graph_edges]] -
                                             all_vertex_src.T[[x[1] for x in face_graph_edges]], axis=1)
         face_graph = igraph.Graph(edges=face_graph_edges, directed=False)
+        all_tri_x = np.vstack([all_vertex_src[0, all_tri[x, :]] for x in (0, 1, 2)])
+        all_tri_y = np.vstack([all_vertex_src[1, all_tri[x, :]] for x in (0, 1, 2)])
+        all_tri_left = np.min(all_tri_x, axis=0)
+        all_tri_right = np.max(all_tri_x, axis=0)
+        all_tri_top = np.min(all_tri_y, axis=0)
+        all_tri_bottom = np.max(all_tri_y, axis=0)
         for idx, pt in enumerate(landmarks):
-            pt_barycentric = calc_barycentric_coordinates(pt, all_vertex_src.T[:, :2], all_tri.T)
-            potential_matches = np.where(np.all(np.hstack((0.0 <= pt_barycentric, pt_barycentric <= 1.0)), axis=1))[0]
-            if idx in mouth_point_indices and not np.any(np.logical_and(bg_tri.shape[1] <= potential_matches,
-                                                                        potential_matches < bg_tri.shape[1] +
-                                                                        face_models['tri_plus'].shape[1])):
-                # Fix the mouth point if it falls into a hole
-                lm = Point(pt)
-                closest_pts = []
-                for tri_idx in range(bg_tri.shape[1] + face_models['tri'].shape[1],
-                                     bg_tri.shape[1] + face_models['tri'].shape[1] +
-                                     face_models['tri_mouth'].shape[1]):
-                    mouth_tri = Polygon([all_vertex_src[:2, x] for x in all_tri[:, tri_idx]])
-                    _, closest_pt = nearest_points(lm, mouth_tri)
-                    closest_pts.append([closest_pt.x, closest_pt.y])
-                closest_pts = np.vstack(closest_pts)
-                closest_idx = np.argmin(np.linalg.norm(closest_pts - pt, axis=1))
-                matching_tri_idx = bg_tri.shape[1] + face_models['tri'].shape[1] + closest_idx
-                matching_triangles[idx] = (matching_tri_idx, calc_barycentric_coordinates(
-                    closest_pts[closest_idx], all_vertex_src.T[:, :2],
-                    np.expand_dims(all_tri[:, matching_tri_idx], 0))[0])
-            elif len(potential_matches) > 0:
-                potential_tri = all_tri[:, potential_matches]
-                paths_to_potential_tri = face_graph.get_shortest_paths(
-                    v=face_models['keypoints'][idx] + bg_vertex_src.shape[1], to=potential_tri.flatten(),
-                    weights=face_graph_weights, mode=igraph.ALL, output='epath')
-                dists_to_potential_tri = np.array([face_graph_weights[p].sum() for
-                                                   p in paths_to_potential_tri]).reshape((3, -1))
-                a = all_vertex_src[:, potential_tri[0]]
-                b = all_vertex_src[:, potential_tri[1]]
-                c = all_vertex_src[:, potential_tri[2]]
-                potential_pt_3d = (a * pt_barycentric[potential_matches, 0] +
-                                   b * pt_barycentric[potential_matches, 1] +
-                                   c * pt_barycentric[potential_matches, 2])
-                pt_dists_to_a = np.linalg.norm(potential_pt_3d - a, axis=0)
-                pt_dists_to_b = np.linalg.norm(potential_pt_3d - b, axis=0)
-                pt_dists_to_c = np.linalg.norm(potential_pt_3d - c, axis=0)
-                match = np.argmin((dists_to_potential_tri +
-                                   np.vstack((pt_dists_to_a, pt_dists_to_b, pt_dists_to_c))).min(axis=0))
-                matching_triangles[idx] = (potential_matches[match], pt_barycentric[potential_matches[match]])
+            potential_tri_ind = np.where(np.all([all_tri_left <= pt[0], pt[0] <= all_tri_right,
+                                                 all_tri_top <= pt[1], pt[1] <= all_tri_bottom], axis=0))[0]
+            if len(potential_tri_ind) > 0:
+                pt_barycentric = calc_barycentric_coordinates(pt, all_vertex_src.T[:, :2],
+                                                              all_tri.T[potential_tri_ind])
+                potential_matches = np.where(np.all(np.hstack(
+                    (0.0 <= pt_barycentric, pt_barycentric <= 1.0)), axis=1))[0]
+                if idx in mouth_point_indices and not np.any(np.logical_and(
+                        bg_tri.shape[1] <= potential_tri_ind[potential_matches],
+                        potential_tri_ind[potential_matches] < bg_tri.shape[1] + face_models['tri_plus'].shape[1])):
+                    # Fix the mouth point if it falls into a hole
+                    lm = Point(pt)
+                    closest_pts = []
+                    for tri_idx in range(bg_tri.shape[1] + face_models['tri'].shape[1],
+                                         bg_tri.shape[1] + face_models['tri'].shape[1] +
+                                         face_models['tri_mouth'].shape[1]):
+                        mouth_tri = Polygon([all_vertex_src[:2, x] for x in all_tri[:, tri_idx]])
+                        _, closest_pt = nearest_points(lm, mouth_tri)
+                        closest_pts.append([closest_pt.x, closest_pt.y])
+                    closest_pts = np.vstack(closest_pts)
+                    closest_idx = np.argmin(np.linalg.norm(closest_pts - pt, axis=1))
+                    matching_tri_idx = bg_tri.shape[1] + face_models['tri'].shape[1] + closest_idx
+                    matching_triangles[idx] = (matching_tri_idx, calc_barycentric_coordinates(
+                        closest_pts[closest_idx], all_vertex_src.T[:, :2],
+                        np.expand_dims(all_tri[:, matching_tri_idx], 0))[0])
+                elif len(potential_matches) > 0:
+                    if len(potential_matches) > 1:
+                        potential_tri = all_tri[:, potential_tri_ind[potential_matches]]
+                        paths_to_potential_tri = face_graph.get_shortest_paths(
+                            v=face_models['keypoints'][idx] + bg_vertex_src.shape[1], to=potential_tri.flatten(),
+                            weights=face_graph_weights, mode=igraph.ALL, output='epath')
+                        dists_to_potential_tri = np.array([face_graph_weights[p].sum() for
+                                                           p in paths_to_potential_tri]).reshape((3, -1))
+                        a = all_vertex_src[:, potential_tri[0]]
+                        b = all_vertex_src[:, potential_tri[1]]
+                        c = all_vertex_src[:, potential_tri[2]]
+                        potential_pt_3d = (a * pt_barycentric[potential_matches, 0] +
+                                           b * pt_barycentric[potential_matches, 1] +
+                                           c * pt_barycentric[potential_matches, 2])
+                        pt_dists_to_a = np.linalg.norm(potential_pt_3d - a, axis=0)
+                        pt_dists_to_b = np.linalg.norm(potential_pt_3d - b, axis=0)
+                        pt_dists_to_c = np.linalg.norm(potential_pt_3d - c, axis=0)
+                        match = np.argmin((dists_to_potential_tri +
+                                           np.vstack((pt_dists_to_a, pt_dists_to_b, pt_dists_to_c))).min(axis=0))
+                    else:
+                        match = 0
+                    matching_triangles[idx] = (potential_tri_ind[potential_matches[match]],
+                                               pt_barycentric[potential_matches[match]])
         all_tri[:, :bg_tri_alt.shape[1]] = bg_tri
 
     maps_or_images = []
