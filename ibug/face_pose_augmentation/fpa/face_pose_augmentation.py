@@ -5,7 +5,6 @@ import numpy as np
 from shapely.ops import nearest_points
 from shapely.geometry import Point, Polygon
 from typing import Dict, Optional, Sequence, Tuple
-from pygeodesic.geodesic import PyGeodesicAlgorithmExact
 from .utils import (make_rotation_matrix, project_shape, image_meshing, image_rotation,
                     create_correspondence_map, remap_image, model_completion_bfm,
                     z_buffer_tri, calc_barycentric_coordinates, refine_contour_points)

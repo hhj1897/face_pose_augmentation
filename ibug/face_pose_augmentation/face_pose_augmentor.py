@@ -75,11 +75,16 @@ class FacePoseAugmentor(object):
         if delta_poses.size > 0:
             if delta_poses.ndim > 1:
                 results = []
-                for corr_map, lms in zip(*generate_profile_faces(delta_poses, tddfa_result, image,
-                                                                 self.fpa_models, True, landmarks=landmarks)):
+                for corr_map, lms in zip(*generate_profile_faces(
+                        delta_poses, tddfa_result, image, self.fpa_models, True,
+                        landmarks=(landmarks + 1 if landmarks is not None else None))):
                     result = dict()
                     result['correspondence_map'] = corr_map
-                    result['warped_landmarks'] = lms
+                    lms = np.ascontiguousarray(lms.transpose((0, 2, 1)))
+                    lms[..., :2] -= 1
+                    result['warped_landmarks'] = {'3d_style': lms[0], '2d_style': lms[1]}
+                    if lms.shape[0] > 2:
+                        result['warped_landmarks']['exact'] = lms[2]
                     if warp_image:
                         result['warped_image'] = cv2.remap(image, corr_map[..., 0].astype(np.float32),
                                                            corr_map[..., 1].astype(np.float32),
