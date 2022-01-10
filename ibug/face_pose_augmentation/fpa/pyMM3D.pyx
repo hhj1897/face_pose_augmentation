@@ -22,7 +22,7 @@ def ZBuffer(cnp.ndarray[double, ndim=2, mode="c"] vertex not None,
             cnp.ndarray[double, ndim=3, mode="c"] src_img,
             nver, ntri, im_width, im_height, num_channels):
     cdef cnp.ndarray[double, ndim=3, mode="c"] img = None
-    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32)
+    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32_t)
 
     if texture is not None or src_img is not None:
         img = np.zeros((im_height, im_width, num_channels), dtype=np.float64)
@@ -41,7 +41,7 @@ def ZBufferTri(cnp.ndarray[double, ndim=2, mode="c"] vertex not None,
                cnp.ndarray[double, ndim=3, mode="c"] src_img,
                nver, ntri, im_width, im_height, num_channels):
     cdef cnp.ndarray[double, ndim=3, mode="c"] img = None
-    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32)
+    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32_t)
 
     if texture_tri is not None and src_img is not None:
         img = np.zeros((im_height, im_width, num_channels), dtype=np.float64)

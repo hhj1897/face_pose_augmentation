@@ -206,7 +206,7 @@ def z_buffer(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, im_he
     num_triangles = tri.shape[1]
 
     return pyMM.ZBuffer(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
-                        np.ascontiguousarray(tri.astype(np.int32)),
+                        np.ascontiguousarray(tri.astype(np.int32_t)),
                         None if texture is None else np.ascontiguousarray(texture.astype(np.float64)),
                         None if img_src is None else np.ascontiguousarray(img_src.astype(np.float64)),
                         num_vertices, num_triangles, im_width, im_height, num_channels)
@@ -219,7 +219,7 @@ def z_buffer_tri(projected_vertex: np.ndarray, tri: np.ndarray, im_width: int, i
     num_triangles = tri.shape[1]
     
     return pyMM.ZBufferTri(np.ascontiguousarray((projected_vertex - 1).astype(np.float64)),
-                           np.ascontiguousarray(tri.astype(np.int32)),
+                           np.ascontiguousarray(tri.astype(np.int32_t)),
                            None if texture_tri is None else np.ascontiguousarray(texture_tri.astype(np.float64)),
                            None if img_src is None else np.ascontiguousarray(img_src.astype(np.float64)),
                            num_vertices, num_triangles, im_width, im_height, num_channels)
@@ -652,10 +652,10 @@ def create_correspondence_map(tri_ind: np.ndarray, all_vertex_src: np.ndarray, a
     all_vertex_ref = all_vertex_ref - 1
 
     return pyFF.pyFaceFrontalizationMapping(
-        np.ascontiguousarray(tri_ind.astype(np.int32)), width, height,
+        np.ascontiguousarray(tri_ind.astype(np.int32_t)), width, height,
         np.ascontiguousarray(all_vertex_src.astype(np.float64)),
         np.ascontiguousarray(all_vertex_ref.astype(np.float64)), all_ver_length,
-        np.ascontiguousarray(all_tri.astype(np.int32)), all_tri_length)
+        np.ascontiguousarray(all_tri.astype(np.int32_t)), all_tri_length)
 
 
 def remap_image(img: np.ndarray, corres_map: np.ndarray) -> np.ndarray:
