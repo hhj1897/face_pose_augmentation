@@ -84,7 +84,7 @@ class FacePoseAugmentor(object):
                     lms[..., :2] -= 1
                     result['warped_landmarks'] = {'3d_style': lms[0], '2d_style': lms[1]}
                     if lms.shape[0] > 2:
-                        result['warped_landmarks']['exact'] = lms[2]
+                        result['warped_landmarks']['projected_2d'] = lms[2]
                     if warp_image:
                         result['warped_image'] = cv2.remap(image, corr_map[..., 0].astype(np.float32),
                                                            corr_map[..., 1].astype(np.float32),
