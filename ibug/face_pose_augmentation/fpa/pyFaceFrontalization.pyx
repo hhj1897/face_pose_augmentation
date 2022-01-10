@@ -1,13 +1,12 @@
 import numpy as np
 cimport numpy as cnp
-from libc.stdint cimport int32_t
 
 
 # declare FaceFrontalization class
 cdef extern from "cpp/face_frontalization.h":
     cdef cppclass FaceFrontalization:
         FaceFrontalization()
-        FaceFrontalization(const int32_t *, int, int, const double *, const double *, int, const int32_t *, int)
+        FaceFrontalization(const int *, int, int, const double *, const double *, int, const int *, int)
         FaceFrontalization(const double *, int, int, int, const double *)
 
         void frontalization_mapping(double *)
@@ -19,10 +18,10 @@ cdef extern from "cpp/face_frontalization.h":
 cnp.import_array()
 
 
-def pyFaceFrontalizationMapping(cnp.ndarray[int32_t, ndim=2, mode='c'] tri_ind not None, im_width, im_height,
+def pyFaceFrontalizationMapping(cnp.ndarray[int, ndim=2, mode='c'] tri_ind not None, im_width, im_height,
                                 cnp.ndarray[double, ndim=2, mode='c'] all_vertex_src not None,
                                 cnp.ndarray[double, ndim=2, mode='c'] all_vertex_ref not None, all_ver_length,
-                                cnp.ndarray[int32_t, ndim=2, mode='c'] all_tri not None, all_tri_length):
+                                cnp.ndarray[int, ndim=2, mode='c'] all_tri not None, all_tri_length):
     cdef cnp.ndarray[double, ndim=3, mode="c"] corres_map = np.zeros((im_height, im_width, 2), dtype=np.float64)
 
     cdef FaceFrontalization c_ff = FaceFrontalization(

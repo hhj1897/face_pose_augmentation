@@ -11,8 +11,8 @@ FaceFrontalization::FaceFrontalization() {}
 FaceFrontalization::~FaceFrontalization() {}
 
 FaceFrontalization::FaceFrontalization(
-    const int32_t *tri_ind, int width, int height, const double *all_vertex_src,
-    const double *all_vertex_ref, int all_ver_length, const int32_t *all_tri, int all_tri_length)
+    const int *tri_ind, int width, int height, const double *all_vertex_src,
+    const double *all_vertex_ref, int all_ver_length, const int *all_tri, int all_tri_length)
 {
     this->tri_ind = tri_ind;
     this->width = width;
@@ -43,7 +43,7 @@ void FaceFrontalization::frontalization_mapping(double *corres_map)
     {
         for(int x = 0; x < width; ++x)
         {
-            const int32_t &corres_tri = tri_ind[y * width + x];
+            const int &corres_tri = tri_ind[y * width + x];
             if(corres_tri < 0)
             {
                 corres_map[(y * width + x) * 2] = -1;
