@@ -1,13 +1,14 @@
 import numpy as np
 cimport numpy as cnp
+from libc.stdint cimport int32_t
 
 
 # declare 3DMM class
 cdef extern from "cpp/MM3D.h":
     void _ZBuffer "MM3D::ZBuffer" (
-        const double *, const int *, const double *, int, int, const double *, int, int, int, double *, int *)
+        const double *, const int32_t *, const double *, int, int, const double *, int, int, int, double *, int32_t *)
     void _ZBufferTri "MM3D::ZBufferTri" (
-        const double *, const int *, const double *, int, int, const double *, int, int, int, double *, int *)
+        const double *, const int32_t *, const double *, int, int, const double *, int, int, int, double *, int32_t *)
 
 
 # Numpy must be initialized. When using numpy from C or Cython you must
@@ -16,12 +17,12 @@ cnp.import_array()
 
 
 def ZBuffer(cnp.ndarray[double, ndim=2, mode="c"] vertex not None,
-            cnp.ndarray[int, ndim=2, mode="c"] tri not None,
+            cnp.ndarray[int32_t, ndim=2, mode="c"] tri not None,
             cnp.ndarray[double, ndim=2, mode="c"] texture,
             cnp.ndarray[double, ndim=3, mode="c"] src_img,
             nver, ntri, im_width, im_height, num_channels):
     cdef cnp.ndarray[double, ndim=3, mode="c"] img = None
-    cdef cnp.ndarray[int, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.intc)
+    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32)
 
     if texture is not None or src_img is not None:
         img = np.zeros((im_height, im_width, num_channels), dtype=np.float64)
@@ -35,12 +36,12 @@ def ZBuffer(cnp.ndarray[double, ndim=2, mode="c"] vertex not None,
 
 
 def ZBufferTri(cnp.ndarray[double, ndim=2, mode="c"] vertex not None,
-               cnp.ndarray[int, ndim=2, mode="c"] tri not None,
+               cnp.ndarray[int32_t, ndim=2, mode="c"] tri not None,
                cnp.ndarray[double, ndim=2, mode="c"] texture_tri,
                cnp.ndarray[double, ndim=3, mode="c"] src_img,
                nver, ntri, im_width, im_height, num_channels):
     cdef cnp.ndarray[double, ndim=3, mode="c"] img = None
-    cdef cnp.ndarray[int, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.intc)
+    cdef cnp.ndarray[int32_t, ndim=2, mode="c"] tri_ind = np.zeros((im_height, im_width), dtype=np.int32)
 
     if texture_tri is not None and src_img is not None:
         img = np.zeros((im_height, im_width, num_channels), dtype=np.float64)
