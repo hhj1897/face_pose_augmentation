@@ -79,7 +79,7 @@ def face_pose_augmentation_loop(tddfa: TDDFAPredictor, augmentor: FacePoseAugmen
 
     # Display the result
     dp_idx, dy_idx = len(delta_pitchs) // 2, 0
-    landmark_styles = ['3d_style', '2d_style', 'projected_2d']
+    landmark_styles = ['3d_style', '2d_style', 'projected_3d', 'refined_2d']
     if landmark_style_index > 0:
         print(f'Displaying result with \'{landmark_styles[landmark_style_index - 1]}\' landmarks, ' +
               'you can use the following commands:')
@@ -93,6 +93,7 @@ def face_pose_augmentation_loop(tddfa: TDDFAPredictor, augmentor: FacePoseAugmen
           f'  |_1: Display \'{landmark_styles[0]}\' landmarks\n' +
           f'  |_2: Display \'{landmark_styles[1]}\' landmarks\n' +
           f'  |_3: Display \'{landmark_styles[2]}\' landmarks\n' +
+          f'  |_4: Display \'{landmark_styles[3]}\' landmarks\n'
           '  |_C: Goes back to face and landmark detection.\n' +
           '  |_Q: Quit the demo.')
     while True:
@@ -120,7 +121,7 @@ def face_pose_augmentation_loop(tddfa: TDDFAPredictor, augmentor: FacePoseAugmen
             dp_idx = min(dp_idx + 1, len(delta_pitchs) - 1)
             print(f'\'S\' pressed: tilting down by setting head pose to ({pitch:.3f}, {yaw:.3f}, {roll:.3f}) + ' +
                   f'({delta_pitchs[dp_idx]:.1f}, {delta_yaws[dy_idx]:.1f}, 0.0)')
-        elif ord('0') <= key <= ord('3'):
+        elif ord('0') <= key <= ord('4'):
             landmark_style_index = key - ord('0')
             if landmark_style_index > 0:
                 print(f'\'{chr(key)}\' pressed, setting to display ' +
@@ -179,7 +180,7 @@ def main() -> None:
             print(f'Input video "{args.input}" opened.')
 
         # The main processing loop
-        landmark_style_index = 1
+        landmark_style_index = 4
         window_title = os.path.splitext(os.path.basename(__file__))[0]
         while True:
             frame, landmarks = face_detection_loop(vid, face_detector, landmark_detector, window_title)
