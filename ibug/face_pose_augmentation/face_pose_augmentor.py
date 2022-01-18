@@ -104,48 +104,59 @@ class FacePoseAugmentor(object):
     def refine_2d_landmarks(tddfa_result: Dict, delta_pose: Sequence[float], landmarks: np.ndarray,
                             jaw_points_2d: np.ndarray, landmarks_3d: np.ndarray) -> np.ndarray:
         refined_landmarks = landmarks[:, :2].copy()
-        yaw = tddfa_result['face_pose']['yaw']
-        delta_yaw = delta_pose[1]
-        if delta_yaw != 0.0:
-            weight = np.clip((np.cos((yaw + delta_yaw) / 90.0 * np.pi) + 1.0) / (np.cos(yaw / 90.0 * np.pi) + 1.0),
+        pitch, yaw = tddfa_result['face_pose']['pitch'], tddfa_result['face_pose']['yaw']
+        delta_pitch, delta_yaw = delta_pose[0], delta_pose[1]
+        if delta_yaw != 0.0 or delta_pitch != 0.0:
+            weight = np.clip((np.cos((yaw + delta_yaw) * 2.0) + 1.0) / (np.cos(yaw * 2.0) + 1.0),
                              0.0, 1.0)
+            weight_p = np.clip((np.cos((pitch + delta_pitch) * 2.0) + 1.0) / (np.cos(pitch * 2.0) + 1.0),
+                               0.0, 1.0)
             num_jaw_points = jaw_points_2d.shape[0]
-            if delta_yaw < 0.0:
-                blending_indices = list(range(17, 22)) + list(range(27, 34)) + [36, 39]
-                contour_weights = weight / (1.0 + np.exp(num_jaw_points // 2 - np.arange(num_jaw_points)))
+            blending_indices = []
+            bad_contour_indices = []
+            contour_weights = np.full((num_jaw_points,), weight_p)
+            if delta_yaw < 0.0 or delta_pitch != 0.0 and yaw < 0.0:
+                if delta_yaw < 0.0:
+                    blending_indices = list(range(17, 22)) + list(range(27, 34)) + [36, 39]
+                contour_weights *= weight / (1.0 + np.exp(num_jaw_points // 2 - np.arange(num_jaw_points)))
                 bad_contour_indices = [3, num_jaw_points // 2]
-            else:
-                blending_indices = list(range(22, 31)) + list(range(33, 36)) + [42, 45]
-                contour_weights = weight / (1.0 + np.exp(np.arange(num_jaw_points) - num_jaw_points // 2))
+            elif delta_yaw > 0.0 or delta_pitch != 0.0 and yaw > 0.0:
+                if delta_yaw > 0.0:
+                    blending_indices = list(range(22, 31)) + list(range(33, 36)) + [42, 45]
+                contour_weights *= weight / (1.0 + np.exp(np.arange(num_jaw_points) - num_jaw_points // 2))
                 bad_contour_indices = [num_jaw_points // 2, num_jaw_points - 4]
-            good_contour_indices = [x for x in range(num_jaw_points) if x not in bad_contour_indices]
-            interp_x = interp1d(good_contour_indices, jaw_points_2d[good_contour_indices, 0], kind='cubic')
-            interp_y = interp1d(good_contour_indices, jaw_points_2d[good_contour_indices, 1], kind='cubic')
             fixed_contour = jaw_points_2d.copy()
-            fixed_contour[bad_contour_indices] = np.vstack((interp_x(bad_contour_indices),
-                                                            interp_y(bad_contour_indices))).T
-            refined_landmarks[blending_indices] = (refined_landmarks[blending_indices] * weight +
-                                                   landmarks_3d[blending_indices, :2] * (1.0 - weight))
+            if len(bad_contour_indices) > 0:
+                good_contour_indices = [x for x in range(num_jaw_points) if x not in bad_contour_indices]
+                interp_x = interp1d(good_contour_indices, jaw_points_2d[good_contour_indices, 0], kind='cubic')
+                interp_y = interp1d(good_contour_indices, jaw_points_2d[good_contour_indices, 1], kind='cubic')
+                fixed_contour[bad_contour_indices] = np.vstack((interp_x(bad_contour_indices),
+                                                                interp_y(bad_contour_indices))).T
+            if len(blending_indices) > 0:
+                refined_landmarks[blending_indices] = (refined_landmarks[blending_indices] * weight +
+                                                       landmarks_3d[blending_indices, :2] * (1.0 - weight))
             contour_weights = np.repeat(contour_weights, 2).reshape((-1, 2))
             refined_landmarks[:num_jaw_points] = (refined_landmarks[:num_jaw_points] * contour_weights +
                                                   fixed_contour * (1.0 - contour_weights))
-            if delta_yaw < 0.0:
+            indices_for_smoothing = []
+            if delta_yaw < 0.0 or delta_pitch != 0.0 and yaw < 0.0:
                 indices_for_smoothing = range(num_jaw_points // 2 + 2, num_jaw_points - 1)
-            else:
+            elif delta_yaw > 0.0 or delta_pitch != 0.0 and yaw > 0.0:
                 indices_for_smoothing = range(1, num_jaw_points // 2 - 1)
-            deltas = (refined_landmarks[indices_for_smoothing[0]: indices_for_smoothing[-1] + 2] -
-                      refined_landmarks[indices_for_smoothing[0] - 1: indices_for_smoothing[-1] + 1])
-            delta_norms = np.linalg.norm(deltas, axis=1)
-            pseudo_curvature = (deltas[1:] * deltas[:-1]).sum(axis=1) / delta_norms[1:] / delta_norms[:-1]
-            bad_index = np.argmin(pseudo_curvature) + indices_for_smoothing[0]
-            good_indices = [x for x in range(num_jaw_points) if x != bad_index]
-            interp_x = interp1d(good_indices, refined_landmarks[good_indices, 0], kind='cubic')
-            interp_y = interp1d(good_indices, refined_landmarks[good_indices, 1], kind='cubic')
-            updated_pt = np.hstack((interp_x(bad_index), interp_y(bad_index)))
-            new_delta1 = updated_pt - refined_landmarks[bad_index - 1]
-            new_delta2 = refined_landmarks[bad_index + 1] - updated_pt
-            new_pc = np.dot(new_delta1, new_delta2) / np.linalg.norm(new_delta1) / np.linalg.norm(new_delta2)
-            if new_pc > pseudo_curvature.min():
-                refined_landmarks[bad_index] = updated_pt
+            if len(indices_for_smoothing) > 0:
+                deltas = (refined_landmarks[indices_for_smoothing[0]: indices_for_smoothing[-1] + 2] -
+                          refined_landmarks[indices_for_smoothing[0] - 1: indices_for_smoothing[-1] + 1])
+                delta_norms = np.linalg.norm(deltas, axis=1)
+                pseudo_curvature = (deltas[1:] * deltas[:-1]).sum(axis=1) / delta_norms[1:] / delta_norms[:-1]
+                bad_index = np.argmin(pseudo_curvature) + indices_for_smoothing[0]
+                good_indices = [x for x in range(num_jaw_points) if x != bad_index]
+                interp_x = interp1d(good_indices, refined_landmarks[good_indices, 0], kind='cubic')
+                interp_y = interp1d(good_indices, refined_landmarks[good_indices, 1], kind='cubic')
+                updated_pt = np.hstack((interp_x(bad_index), interp_y(bad_index)))
+                new_delta1 = updated_pt - refined_landmarks[bad_index - 1]
+                new_delta2 = refined_landmarks[bad_index + 1] - updated_pt
+                new_pc = np.dot(new_delta1, new_delta2) / np.linalg.norm(new_delta1) / np.linalg.norm(new_delta2)
+                if new_pc > pseudo_curvature.min():
+                    refined_landmarks[bad_index] = updated_pt
 
         return refined_landmarks
