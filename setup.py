@@ -52,8 +52,8 @@ config = {
     'author': 'Jie Shen',
     'author_email': 'js1907@imperial.ac.uk',
     'packages': ['ibug.face_pose_augmentation'],
-    'install_requires': ['numpy>=1.16.0', 'scipy>=1.1.0', 'torch>=1.1.0', 'opencv-python>= 3.4.2',
-                         'igraph>=0.8.3', 'matplotlib', 'shapely', 'cython'],
+    'install_requires': ['numpy>=1.16.0', 'scipy>=1.1.0', 'torch>=1.1.0', 'opencv-python>=3.4.2',
+                         'cmake>=3.16', 'igraph>=0.8.3', 'matplotlib', 'shapely', 'cython'],
     'ext_modules': cythonize(extensions, compiler_directives={'language_level': '3'}),
     'zip_safe': False
 }

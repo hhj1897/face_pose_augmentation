@@ -1,5 +1,5 @@
 #include <cmath>
-#include <cstdlib>
+#include <cstring>
 #include <algorithm>
 #include "MM3D.h"
 

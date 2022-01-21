@@ -6,6 +6,7 @@ A Python toolbox for face pose augmentation based on [3DDFA](https://ieeexplore.
 * [Sciypy](https://www.scipy.org/): `$pip3 install scipy`
 * [PyTorch](https://pytorch.org/): `$pip3 install torch torchvision`
 * [OpenCV](https://opencv.org/): `$pip3 install opencv-python`
+* [cmake](https://cmake.org/): `$pip3 install cmake`
 * [igraph](https://igraph.org/python/): `$pip3 install igraph`
 * [matplotlib](https://matplotlib.org/): `$pip3 install matplotlib`
 * [shapely](https://github.com/Toblerity/Shapely): `$pip3 install shapely`
