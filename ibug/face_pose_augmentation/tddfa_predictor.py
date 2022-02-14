@@ -85,7 +85,7 @@ class TDDFAPredictor(object):
             return np.empty(shape=(0, 66), dtype=np.float32)
 
     @staticmethod
-    def decode(tdmm_params: np.ndarray) -> Union[Dict, List[Dict]]:
+    def decode(tdmm_params: np.ndarray, pose_pref: int = 0) -> Union[Dict, List[Dict]]:
         if tdmm_params.size > 0:
             if tdmm_params.ndim > 1:
                 return [TDDFAPredictor.decode(x) for x in tdmm_params]
@@ -94,8 +94,8 @@ class TDDFAPredictor(object):
                 params = tdmm_params[4:]
                 vertex, pts68, f_rot, tr = reconstruct_from_3dmm(params)
                 camera_transform = {'fR': f_rot, 'T': tr}
-                yaw, pitch, roll, t3d, f = parse_param_pose(params)
-                face_pose = {'yaw': yaw, 'pitch': pitch, 'roll': roll, 't3d': t3d, 'f': f}
+                pitch, yaw, roll, t3d, f = parse_param_pose(params, pose_pref)
+                face_pose = {'pitch': pitch, 'yaw': yaw, 'roll': roll, 't3d': t3d, 'f': f}
                 return {'roi_box': roi_box, 'params': params, 'vertex': vertex, 'pts68': pts68,
                         'face_pose': face_pose, 'camera_transform': camera_transform}
         else:

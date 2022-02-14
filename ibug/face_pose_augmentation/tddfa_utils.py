@@ -62,12 +62,28 @@ def parse_param(param: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, 
     return f_rot, tr, alpha_shp, alpha_exp
 
 
-def parse_param_pose(param: np.ndarray) -> Tuple[float, float, float, np.ndarray, float]:
+def parse_param_pose(param: np.ndarray, pose_pref: int = 0) -> Tuple[float, float, float, np.ndarray, float]:
     param = param * param_std + param_mean
     cam_mat = param[:12].reshape(3, -1)
     s, rot_mat, t3d = decompose_camera_matrix(cam_mat)
     yaw, pitch, roll = matrix2angle(rot_mat)
-    return yaw, pitch, roll, t3d, s
+
+    # Respond to pose_pref:
+    # pose_pref == 1: limit pitch to the range of -90.0 ~ 90.0
+    # pose_pref == 2: limit yaw to the range of -90.0 ~ 90.0 (already satisfied)
+    # pose_pref == 3: limit roll to the range of -90.0 ~ 90.0
+    # otherwise: minimise total rotation, min(abs(pitch) + abs(yaw) + abs(roll))
+    if pose_pref != 2:
+        alt_pitch = pitch - np.pi if pitch > 0.0 else pitch + np.pi
+        alt_yaw = -np.pi - yaw if yaw < 0.0 else np.pi - yaw
+        alt_roll = roll - np.pi if roll > 0.0 else roll + np.pi
+        if (pose_pref == 1 and -np.pi / 2.0 < alt_pitch < np.pi / 2.0 or
+                pose_pref == 3 and -np.pi / 2.0 < alt_roll < np.pi / 2.0 or
+                pose_pref not in (1, 2, 3) and
+                abs(alt_pitch) + abs(alt_yaw) + abs(alt_roll) < abs(pitch) + abs(yaw) + abs(roll)):
+            pitch, yaw, roll = alt_pitch, alt_yaw, alt_roll
+
+    return pitch, yaw, roll, t3d, s
 
 
 def reconstruct_from_3dmm(param: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
