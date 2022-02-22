@@ -460,7 +460,9 @@ def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_verte
                   projected_vertexm_full: np.ndarray, f_rot: np.ndarray, tr: np.ndarray, roi_bbox: np.ndarray,
                   pitch: float, yaw: float, keypoints: Sequence[int], keypointsfull_contour: np.ndarray,
                   parallelfull_contour: Sequence[np.ndarray], im_width: int, im_height: int,
-                  layer_widths: Sequence[float], eliminate_inner_tri: bool = False) \
+                  layer_widths: Sequence[float], eliminate_inner_tri: bool = False,
+                  anchor_z_medians: Optional[np.ndarray] = None,
+                  anchor_radial_z_dist_thresholds: Optional[np.ndarray] = None) \
         -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int]:
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
@@ -579,9 +581,25 @@ def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_verte
     solid_depth_bin = np.hstack(solid_depth_bin_list)
     contour_all_new = np.hstack(contlist)
 
-    # Finally refine non_solid contour
-    counter = 0
+    # Finally refine non-solid contour
     contour_all_new = adjust_anchors_z(contour_all_new, contour_all, np.logical_not(solid_depth_bin), bg_tri_all)
+
+    # Fix bad anchors around the neck
+    if anchor_z_medians is not None and anchor_radial_z_dist_thresholds is not None:
+        need_fixing = False
+        anchor_zs = contour_all_new[2, :-contlist[-1].shape[1]].reshape(-1, contlist[0].shape[1])[1:]
+        f = np.linalg.norm(f_rot, axis=1)[:2].mean()
+        anchor_radial_z_dists = np.abs((anchor_zs - anchor_zs.mean(axis=0)) / f - anchor_z_medians).mean(axis=0)
+        for idx in range(3, 14):
+            if (anchor_radial_z_dists[idx] > anchor_radial_z_dist_thresholds[idx] and
+                    np.any(solid_depth_bin[idx: -contlist[-1].shape[1]: contlist[0].shape[1]])):
+                solid_depth_bin[idx: -contlist[-1].shape[1]: contlist[0].shape[1]] = False
+                need_fixing = True
+        if need_fixing:
+            contour_all_new = adjust_anchors_z(contour_all_new, contour_all,
+                                               np.logical_not(solid_depth_bin), bg_tri_all)
+
+    counter = 0
     for idx, contour in enumerate(contlist):
         contlist[idx] = contour_all_new[:, counter: counter + contour.shape[1]]
         counter += contour.shape[1]
@@ -593,15 +611,15 @@ def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, verte
                    face_contour_ind: np.ndarray, isoline_face_contour: Sequence[np.ndarray],
                    pose_params_src: Sequence[float], pose_params_ref: Sequence[float],
                    projected_vertex_ref: np.ndarray, f_rot: np.ndarray, tr: np.ndarray,
-                   roi_box: np.ndarray) -> List[np.ndarray]:
+                   roi_bbox: np.ndarray) -> List[np.ndarray]:
     _, yaw, _, _, f = parse_pose_parameters(pose_params_src)
     pitch_ref, yaw_ref, roll_ref, t3d_ref, _ = parse_pose_parameters(pose_params_ref)
     all_bg_vertex_src = np.hstack(contlist_src)
 
     # 1. get the preliminary position on the ref frame
-    all_bg_vertex_ref = project_shape(back_project_shape(all_bg_vertex_src, f_rot, tr, roi_box),
+    all_bg_vertex_ref = project_shape(back_project_shape(all_bg_vertex_src, f_rot, tr, roi_bbox),
                                       f * make_rotation_matrix(pitch_ref, yaw_ref, roll_ref),
-                                      t3d_ref[:, np.newaxis], roi_box)
+                                      t3d_ref[:, np.newaxis], roi_bbox)
 
     # 2. Landmark marching 
     if yaw_ref < 0:

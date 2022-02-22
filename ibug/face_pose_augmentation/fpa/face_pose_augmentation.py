@@ -38,7 +38,9 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
     contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = image_meshing(
         vertex_full, tri_full, projected_vertex_src, projected_vertexm_src, f_rot, tr, roi_box, pitch, yaw,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
-        im_width, im_height, face_models['layer_width'], eliminate_inner_tri=further_adjust_z)
+        im_width, im_height, face_models['layer_width'], eliminate_inner_tri=further_adjust_z,
+        anchor_z_medians=face_models['anchor_stats']['anchor_z_medians'],
+        anchor_radial_z_dist_thresholds=face_models['anchor_radial_z_dist_thresholds'])
 
     bg_vertex_src = np.hstack(contlist_src)
     all_vertex_src = np.hstack([bg_vertex_src, projected_vertex_src])

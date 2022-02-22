@@ -1,5 +1,6 @@
 import os
 import cv2
+import pickle
 import numpy as np
 from scipy.io import loadmat
 from scipy.interpolate import interp1d
@@ -64,6 +65,15 @@ class FacePoseAugmentor(object):
         keypoints_index = np.where(fpa_models['keypointsfull_contour'] < n_points)[0]
         fpa_models['keypoints_contour'] = fpa_models['keypointsfull_contour'][keypoints_index]
         fpa_models['parallel_contour'] = [fpa_models['parallelfull_contour'][i] for i in keypoints_index]
+
+        # load and calculate thresholds for detecting bad anchors
+        with open(os.path.join(model_folder, 'anchor_stats.pkl'), 'rb') as f:
+            fpa_models['anchor_stats'] = pickle.load(f)
+            medians = fpa_models['anchor_stats']['anchor_radial_z_dist_pctls'][50]
+            iqrs = (fpa_models['anchor_stats']['anchor_radial_z_dist_pctls'][75] -
+                    fpa_models['anchor_stats']['anchor_radial_z_dist_pctls'][25])
+            pctl95s = fpa_models['anchor_stats']['anchor_radial_z_dist_pctls'][95]
+            fpa_models['anchor_radial_z_dist_thresholds'] = ((medians + iqrs * 1.5) + pctl95s) / 2.0
 
         return fpa_models
 
