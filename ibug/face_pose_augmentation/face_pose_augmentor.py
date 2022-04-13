@@ -94,7 +94,7 @@ class FacePoseAugmentor(object):
                     lms[..., :2] -= 1
                     result['warped_landmarks'] = {'3d_style': lms[0], '2d_style': lms[1]}
                     if lms.shape[0] > 2:
-                        result['warped_landmarks']['projected_3d'] = lms[2]
+                        result['warped_landmarks']['projected_3d'] = lms[2][:min(len(landmarks), len(lms[2]))]
                         result['warped_landmarks']['refined_2d'] = self.refine_2d_landmarks(
                             tddfa_result, delta_poses[idx], result['warped_landmarks']['projected_3d'],
                             result['warped_landmarks']['2d_style'][:17, :2], result['warped_landmarks']['3d_style'])
@@ -123,16 +123,21 @@ class FacePoseAugmentor(object):
                                0.0, 1.0)
             num_jaw_points = jaw_points_2d.shape[0]
             blending_indices = []
+            eyelid_artefacts = []
             bad_contour_indices = []
             contour_weights = np.full((num_jaw_points,), weight_p)
             if delta_yaw < 0.0 or delta_pitch != 0.0 and yaw < 0.0:
                 if delta_yaw < 0.0:
-                    blending_indices = list(range(17, 22)) + list(range(27, 34)) + [36, 39]
+                    blending_indices = (list(range(17, 22)) + list(range(27, 34)) + [36, 39] +
+                                        list(range(68, 72)) + list(range(84, 88)))
+                    eyelid_artefacts = ((76, 36, 37), (78, 38, 39))
                 contour_weights *= weight / (1.0 + np.exp(num_jaw_points // 2 - np.arange(num_jaw_points)))
                 bad_contour_indices = [3, num_jaw_points // 2]
             elif delta_yaw > 0.0 or delta_pitch != 0.0 and yaw > 0.0:
                 if delta_yaw > 0.0:
-                    blending_indices = list(range(22, 31)) + list(range(33, 36)) + [42, 45]
+                    blending_indices = (list(range(22, 31)) + list(range(33, 36)) + [42, 45] +
+                                        list(range(72, 76)) + list(range(84, 88)))
+                    eyelid_artefacts = ((80, 42, 43), (82, 44, 45))
                 contour_weights *= weight / (1.0 + np.exp(np.arange(num_jaw_points) - num_jaw_points // 2))
                 bad_contour_indices = [num_jaw_points // 2, num_jaw_points - 4]
             fixed_contour = jaw_points_2d.copy()
@@ -142,9 +147,14 @@ class FacePoseAugmentor(object):
                 interp_y = interp1d(good_contour_indices, jaw_points_2d[good_contour_indices, 1], kind='cubic')
                 fixed_contour[bad_contour_indices] = np.vstack((interp_x(bad_contour_indices),
                                                                 interp_y(bad_contour_indices))).T
+            blending_indices = [idx for idx in blending_indices if idx < len(refined_landmarks)]
             if len(blending_indices) > 0:
                 refined_landmarks[blending_indices] = (refined_landmarks[blending_indices] * weight +
                                                        landmarks_3d[blending_indices, :2] * (1.0 - weight))
+            for idx1, idx2, idx3 in eyelid_artefacts:
+                if max(idx1, idx2, idx3) < len(refined_landmarks):
+                    mid_point = (refined_landmarks[idx2] + refined_landmarks[idx3]) / 2.0
+                    refined_landmarks[idx1] = refined_landmarks[idx1] * weight + mid_point * (1.0 - weight)
             contour_weights = np.repeat(contour_weights, 2).reshape((-1, 2))
             refined_landmarks[:num_jaw_points] = (refined_landmarks[:num_jaw_points] * contour_weights +
                                                   fixed_contour * (1.0 - contour_weights))

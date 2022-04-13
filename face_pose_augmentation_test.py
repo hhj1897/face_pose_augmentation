@@ -146,6 +146,14 @@ def main() -> None:
                         help='Weights to be loaded by 3DDFA, must be set to mobilenet1')
     parser.add_argument('--device', '-d', default='cuda:0',
                         help='Device to be used by all models (default=cuda:0')
+
+    parser.add_argument('--alignment-weights', '-aw', default='2dfan2_alt',
+                        help='Weights to be loaded for face alignment, can be either 2DFAN2, 2DFAN4, ' +
+                             'or 2DFAN2_ALT (default=2DFAN2_ALT)')
+    parser.add_argument('--alignment-alternative-pth', '-ap', default=None,
+                        help='Alternative pth file to be loaded for face alignment')
+    parser.add_argument('--alignment-alternative-landmarks', '-al', default=None,
+                        help='Alternative number of landmarks to detect')
     args = parser.parse_args()
 
     # Set benchmark mode flag for CUDNN
@@ -158,7 +166,15 @@ def main() -> None:
         print('Face detector created.')
 
         # Create the landmark detector
-        landmark_detector = FANPredictor(device=args.device, model=FANPredictor.get_model('2dfan2_alt'))
+        if args.alignment_weights is None:
+            fa_model = FANPredictor.get_model()
+        else:
+            fa_model = FANPredictor.get_model(args.alignment_weights)
+        if args.alignment_alternative_pth is not None:
+            fa_model.weights = args.alignment_alternative_pth
+        if args.alignment_alternative_landmarks is not None:
+            fa_model.config.num_landmarks = int(args.alignment_alternative_landmarks)
+        landmark_detector = FANPredictor(device=args.device, model=fa_model)
         print('Landmark detector created.')
 
         # Instantiate 3DDFA

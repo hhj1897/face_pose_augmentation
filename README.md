@@ -23,7 +23,7 @@ pip install -e .
 ```
 
 ## How to Test
-```python face_pose_augmentation_test.py -i [-i webcam_index]```
+```python face_pose_augmentation_test.py [-i webcam_index]```
 
 ## How to Use
 ```python
