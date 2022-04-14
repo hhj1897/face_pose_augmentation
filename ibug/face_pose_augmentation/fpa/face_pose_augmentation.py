@@ -68,7 +68,7 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
         all_tri_right = np.max(all_tri_x, axis=0)
         all_tri_top = np.min(all_tri_y, axis=0)
         all_tri_bottom = np.max(all_tri_y, axis=0)
-        for idx, pt in enumerate(landmarks[:min(len(landmarks), len(face_models['keypoints']))]):
+        for idx, pt in enumerate(landmarks[:len(face_models['keypoints'])]):
             potential_tri_ind = np.where(np.all([all_tri_left <= pt[0], pt[0] <= all_tri_right,
                                                  all_tri_top <= pt[1], pt[1] <= all_tri_bottom], axis=0))[0]
             if len(potential_tri_ind) > 0:

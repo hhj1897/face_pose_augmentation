@@ -66,7 +66,7 @@ class TDDFAPredictor(object):
             roi_boxes = []
             face_patches = []
             for lms in landmarks:
-                roi_boxes.append(parse_roi_box_from_landmark(lms.T))
+                roi_boxes.append(parse_roi_box_from_landmark(lms[:68].T))
                 face_patches.append(cv2.resize(crop_img(image, roi_boxes[-1]),
                                                (self.config.input_size, self.config.input_size)))
             face_patches = (torch.from_numpy(np.array(face_patches).transpose(

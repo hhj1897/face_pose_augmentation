@@ -94,7 +94,7 @@ class FacePoseAugmentor(object):
                     lms[..., :2] -= 1
                     result['warped_landmarks'] = {'3d_style': lms[0], '2d_style': lms[1]}
                     if lms.shape[0] > 2:
-                        result['warped_landmarks']['projected_3d'] = lms[2][:min(len(landmarks), len(lms[2]))]
+                        result['warped_landmarks']['projected_3d'] = lms[2][:len(landmarks)]
                         result['warped_landmarks']['refined_2d'] = self.refine_2d_landmarks(
                             tddfa_result, delta_poses[idx], result['warped_landmarks']['projected_3d'],
                             result['warped_landmarks']['2d_style'][:17, :2], result['warped_landmarks']['3d_style'])
