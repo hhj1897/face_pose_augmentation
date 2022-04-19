@@ -463,7 +463,7 @@ def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_verte
                   layer_widths: Sequence[float], eliminate_inner_tri: bool = False,
                   anchor_z_medians: Optional[np.ndarray] = None,
                   anchor_radial_z_dist_thresholds: Optional[np.ndarray] = None) \
-        -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int]:
+        -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, int, int, np.ndarray]:
     # We will mark a set of points to help triangulation the whole image
     # These points are arranged as multiple layers around face contour
     # The layers are set between face contour and bbox
@@ -518,11 +518,14 @@ def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_verte
     bg_tri_all = Delaunay(contour_all.T[:, :2]).simplices.T
 
     # further judge the internal triangles, since there maybe concave tri
+    inbin = np.all(bg_tri_all < contlist[0].shape[1], axis=0)
+    tri_inner = bg_tri_all[:, inbin]
+    valid_inner_tri_ind = get_valid_internal_triangles(contlist[0], tri_inner)
     if eliminate_inner_tri:
-        inbin = np.all(bg_tri_all < contlist[0].shape[1], axis=0)
-        tri_inner = bg_tri_all[:, inbin]
-        valid_inner_tri = get_valid_internal_triangles(contlist[0], tri_inner)
-        bg_tri_all = np.hstack([bg_tri_all[:, np.logical_not(inbin)], tri_inner[:, valid_inner_tri]])
+        bg_tri_all = np.hstack([bg_tri_all[:, np.logical_not(inbin)], tri_inner[:, valid_inner_tri_ind]])
+        inner_bg_tri_ind = np.array([], dtype=int)
+    else:
+        inner_bg_tri_ind = np.where(inbin)[0][np.logical_not(valid_inner_tri_ind)]
 
     # Now we need to determine the z coordinates of each contour point
     # Following the two considerations
@@ -604,7 +607,7 @@ def image_meshing(vertex_full: np.ndarray, tri_full: np.ndarray, projected_verte
         contlist[idx] = contour_all_new[:, counter: counter + contour.shape[1]]
         counter += contour.shape[1]
 
-    return contlist, bg_tri_all, face_contour_ind, wp_num, hp_num
+    return contlist, bg_tri_all, face_contour_ind, wp_num, hp_num, inner_bg_tri_ind
 
 
 def image_rotation(contlist_src: Sequence[np.ndarray], bg_tri: np.ndarray, vertex_full: np.ndarray,

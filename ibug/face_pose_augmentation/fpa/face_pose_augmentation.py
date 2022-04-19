@@ -35,7 +35,7 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
     projected_vertexm_src = project_shape(face_models['vertexm_full'], f_rot, tr, roi_box)
 
     # 2. Image Meshing
-    contlist_src, bg_tri, face_contour_ind, wp_num, hp_num = image_meshing(
+    contlist_src, bg_tri, face_contour_ind, wp_num, hp_num, inner_bg_tri_ind = image_meshing(
         vertex_full, tri_full, projected_vertex_src, projected_vertexm_src, f_rot, tr, roi_box, pitch, yaw,
         face_models['keypoints'], face_models['keypointsfull_contour'], face_models['parallelfull_contour'],
         im_width, im_height, face_models['layer_width'], eliminate_inner_tri=further_adjust_z,
@@ -76,9 +76,9 @@ def generate_profile_faces(delta_poses: np.ndarray, fit_result: Dict, image: np.
                                                               all_tri.T[potential_tri_ind])
                 potential_matches = np.where(np.all(np.hstack(
                     (0.0 <= pt_barycentric, pt_barycentric <= 1.0)), axis=1))[0]
-                if idx in mouth_point_indices and not np.any(np.logical_and(
-                        bg_tri.shape[1] <= potential_tri_ind[potential_matches],
-                        potential_tri_ind[potential_matches] < bg_tri.shape[1] + face_models['tri_plus'].shape[1])):
+                if idx in mouth_point_indices and len(
+                        [x for x in potential_tri_ind[potential_matches] if
+                         x not in inner_bg_tri_ind and x < bg_tri.shape[1] + face_models['tri_plus'].shape[1]]) == 0:
                     # Fix the mouth point if it falls into a hole
                     lm = Point(pt)
                     closest_pts = []
