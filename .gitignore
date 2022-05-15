@@ -8,3 +8,4 @@ dist
 *.so
 *.pyd
 ibug/face_pose_augmentation/fpa/*.cpp
+samples/outputs
