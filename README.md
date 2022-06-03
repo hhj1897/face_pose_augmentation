@@ -1,6 +1,10 @@
 # ibug.face_pose_augmentation
 A Python toolbox for face pose augmentation based on [3DDFA](https://ieeexplore.ieee.org/iel7/34/4359286/08122025.pdf) \[1\] and the authors' [original Matlab code](http://www.cbsr.ia.ac.cn/users/xiangyuzhu/projects/3DDFA/main.htm). Comparing to the [Matlab version](http://www.cbsr.ia.ac.cn/users/xiangyuzhu/projects/3DDFA/main.htm), we fixed few bugs and improved the algorithm to get better correspondence between the 2D landmarks on the original image and the landmarks on the warped image. This tool has been used in our previous work on the topic of  pose-invariant lip-reading \[2\]. We kindly request you to cite both \[1\] and \[2\] should you decide to use this tool in your research.
 
+<p align="center">
+<img src="figures/face_pose_aug_figure.png">
+</p>
+
 ## Prerequisites
 * [Numpy](https://www.numpy.org/): `$pip3 install numpy`
 * [Sciypy](https://www.scipy.org/): `$pip3 install scipy`
