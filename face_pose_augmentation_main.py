@@ -65,6 +65,8 @@ def main() -> None:
                         help='Weights to be loaded by 3DDFA, must be set to mobilenet1')
     parser.add_argument('--device', '-d', default='cuda:0',
                         help='Device to be used by all models (default=cuda:0')
+    parser.add_argument('--plot-landmarks', help='Plot refined 2D benchmarks on the augmented image',
+                        action='store_true', default=False)
 
     parser.add_argument('--pitch', '-p', default=0, type=float,
                         help='Delta of Pitch (in degree) for pose augmentation')
@@ -80,6 +82,7 @@ def main() -> None:
                         help='Alternative pth file to be loaded for face alignment')
     parser.add_argument('--alignment-alternative-landmarks', '-al', default=None,
                         help='Alternative number of landmarks to detect')
+                
     args = parser.parse_args()
 
     # Set benchmark mode flag for CUDNN
@@ -140,7 +143,11 @@ def main() -> None:
             del result["correspondence_map"]
         # save the image separately
         filename = os.path.split(image_fi)[-1]
-        cv2.imwrite(os.path.join(args.output_folder, filename), result["warped_image"])
+        # plot the landmarks
+        warped_image = result["warped_image"].copy()
+        if args.plot_landmarks:
+            plot_landmarks(warped_image, result['warped_landmarks']['refined_2d'])
+        cv2.imwrite(os.path.join(args.output_folder, filename), warped_image)
         del result["warped_image"]
 
         pickle.dump(result, open(os.path.join(args.output_folder, Path(filename).stem+'.pkl'),'wb'))
