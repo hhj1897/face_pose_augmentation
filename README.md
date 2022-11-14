@@ -78,3 +78,4 @@ augmentation_results = augmentor(image, tddfa_result, delta_poses, landmarks)
 \[2\] Xiangyu Zhu, Xiaoming Liu, Zhen Lei, and Stan Z. Li. "[Face alignment in full pose range: A 3d total solution.](https://ieeexplore.ieee.org/iel7/34/4359286/08122025.pdf)" _IEEE transactions on pattern analysis and machine intelligence_ 41, no. 1 (2017): 78-92.
 
 \[3\] Jianzhu Guo, Xiangyu Zhu, Yang Yang, Fan Yan, Zhen Lei, and Stan Z. Li. "[Towards Fast, Accurate and Stable 3D Dense Face Alignment.](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123640154.pdf)" in _Proceedings of the European Conference on Computer Vision (ECCV 2020)_, pp. 152-168.
+
