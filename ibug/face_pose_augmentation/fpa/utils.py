@@ -277,7 +277,7 @@ def image_bbox_to_contour(bbox: np.ndarray, wpnum: int) -> Tuple[np.ndarray, int
 
 
 def get_valid_internal_triangles(cont_ver: np.ndarray, tri: np.ndarray) -> np.ndarray:
-    valid_bin = np.zeros(tri.shape[1], dtype=np.bool)
+    valid_bin = np.zeros(tri.shape[1], dtype=bool)
 
     for i in range(cont_ver.shape[1]):
         # for each contour point, find its related tri
